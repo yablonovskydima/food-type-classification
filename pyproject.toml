@@ -1,0 +1,37 @@
+[project]
+name = "foodclassifier"
+version = "0.1.0"
+description = "Food-11 image classification with ResNet-18 trained from scratch"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.13"
+dependencies = [
+    "torch>=2.6",
+    "torchvision>=0.21",
+    "numpy",
+    "pyyaml",
+    "scikit-learn",
+    "matplotlib",
+    "seaborn",
+    "tensorboard",
+    "tqdm",
+    "kaggle",
+]
+
+[project.optional-dependencies]
+app = ["gradio", "fastapi", "uvicorn", "python-multipart", "onnx", "onnxruntime", "grad-cam"]
+dev = ["pytest", "ruff", "pre-commit", "jupyter"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
