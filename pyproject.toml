@@ -9,6 +9,7 @@ dependencies = [
     "torch>=2.6",
     "torchvision>=0.21",
     "numpy",
+    "pillow",
     "pyyaml",
     "scikit-learn",
     "matplotlib",

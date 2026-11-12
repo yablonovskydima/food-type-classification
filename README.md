@@ -51,6 +51,18 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
    The script skips the download if a valid copy already exists.
    Use `--force` to download again or `--verify-only` to just check the files on disk.
 
+3. Prepare the training data in `data/processed/food11/`:
+
+   ```bash
+   uv run scripts/prepare_data.py
+   ```
+
+   This removes duplicate images, resizes every image so its shorter side is 256 px
+   (use `--size` to change it) and renames class folders to `snake_case`.
+   Food-11 contains ~620 duplicates, mostly across splits: 564 test images also appear in
+   training or validation. Each duplicate is kept only in the earliest split
+   (training > validation > evaluation), so the test split is ~2,780 images instead of 3,347.
+
 ---
 
 ## Tech stack
