@@ -16,6 +16,9 @@ dependencies = [
     "tensorboard",
     "tqdm",
     "kaggle",
+    "six",  # kaggle 2.x imports it but does not declare it as a dependency
+    "python-dotenv",
+    "dotenv>=0.9.9",
 ]
 
 [project.optional-dependencies]

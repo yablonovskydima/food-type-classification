@@ -31,6 +31,28 @@ Bigger models would overfit or need far more data.
 
 ---
 
+## Getting started
+
+The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the dependencies on first use.
+
+1. Create your local env file and set `KAGGLE_API_TOKEN` in it
+   (https://www.kaggle.com/settings/api → Generate New Token):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Download the dataset into `data/raw/food11/` and verify it:
+
+   ```bash
+   uv run scripts/download_data.py
+   ```
+
+   The script skips the download if a valid copy already exists.
+   Use `--force` to download again or `--verify-only` to just check the files on disk.
+
+---
+
 ## Tech stack
 
 - Python 3.12+
