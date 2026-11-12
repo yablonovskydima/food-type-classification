@@ -10,8 +10,9 @@ venv/
 .idea/
 .vscode/
 
-data/*
-!data/.gitkeep
+data/**
+!data/**/
+!data/**/.gitkeep
 checkpoints/
 runs/
 *.pt
