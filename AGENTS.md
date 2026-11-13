@@ -69,7 +69,7 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 2. ✅ Dataset download script
 3. ✅ Dataset processing script (dedup, resize, rename)
 4. ⬜ EDA notebook (class distribution, examples, mean/std)
-5. ⬜ Dataset / transforms / DataLoaders (`src/data`)
+5. ✅ Dataset / transforms / DataLoaders (`src/data`)
 6. ⬜ Model factory: ResNet-18 scratch / pretrained (`src/models`)
 7. ⬜ Training loop with configs, AMP, checkpoints, TensorBoard (`src/training`)
 8. ⬜ Train ResNet-18 from scratch — **main experiment**
