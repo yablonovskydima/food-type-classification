@@ -18,6 +18,18 @@ from src.data.transforms import get_eval_transforms
 from src.models import build_model
 
 
+def get_default_device() -> torch.device:
+    if torch.cuda.is_available():
+        try:
+            test_tensor = torch.zeros(1, 1, 3, 3, device="cuda")
+            weight = torch.zeros(1, 1, 3, 3, device="cuda")
+            torch.nn.functional.conv2d(test_tensor, weight)
+            return torch.device("cuda")
+        except Exception:
+            return torch.device("cpu")
+    return torch.device("cpu")
+
+
 class FoodPredictor:
     def __init__(
         self,
@@ -28,7 +40,7 @@ class FoodPredictor:
         use_imagenet_stats: bool = False,
     ) -> None:
         if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.device = get_default_device()
         else:
             self.device = torch.device(device)
 
