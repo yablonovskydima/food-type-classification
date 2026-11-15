@@ -57,7 +57,10 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 
 - Input size 128 or 224 px; `RandomResizedCrop`, `RandomHorizontalFlip`, `ColorJitter`,
   `RandAugment`, `RandomErasing` for training; `Resize` + `CenterCrop` for validation/test.
-- Normalisation with mean/std computed on the processed training split (from-scratch model).
+- Normalisation with mean/std computed over all pixels of the processed training split
+  (`FOOD11_MEAN` / `FOOD11_STD` in `src/data/constants.py`, recompute with
+  `uv run scripts/compute_stats.py` after rebuilding `data/processed`). The pretrained
+  reference model uses ImageNet statistics instead.
 - SGD (momentum 0.9) or AdamW, OneCycle / cosine LR schedule, 60–100 epochs for the scratch model.
 - Label smoothing 0.1, weight decay 5e-4, mixed precision (AMP), early stopping on validation macro-F1.
 - Experiment settings live in YAML configs, not in code. Fix all random seeds.
@@ -69,8 +72,8 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 2. ✅ Dataset download script
 3. ✅ Dataset processing script (dedup, resize, rename)
 4. ✅ EDA notebook (class distribution, examples, mean/std)
-5. ⬜ Dataset / transforms / DataLoaders (`src/data`)
-6. ⬜ Model factory: ResNet-18 scratch / pretrained (`src/models`)
+5. ✅ Dataset / transforms / DataLoaders (`src/data`); class-imbalance handling still open (issue #5)
+6. ✅ Model factory: ResNet-18 scratch / pretrained (`src/models`)
 7. ⬜ Training loop with configs, AMP, checkpoints, TensorBoard (`src/training`)
 8. ⬜ Train ResNet-18 from scratch — **main experiment**
 9. ⬜ Train pretrained reference, compare curves
@@ -85,7 +88,7 @@ Tasks are tracked as GitHub issues; reference the issue in the PR.
 ```
 .github/workflows/   CI
 app/api/             inference API (FastAPI) — depends on src, never the other way round
-scripts/             one-command utilities: download_data.py, prepare_data.py
+scripts/             one-command utilities: download_data.py, prepare_data.py, compute_stats.py
 src/
   data/              datasets, transforms, samplers
   models/            model factory

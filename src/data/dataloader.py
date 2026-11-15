@@ -1,5 +1,3 @@
-"""DataLoader creation utilities for training and evaluation."""
-
 from pathlib import Path
 
 from torch.utils.data import DataLoader
@@ -26,22 +24,7 @@ def create_dataloaders(
     random_erasing_p: float = 0.2,
     drop_last_train: bool = True,
 ) -> dict[str, DataLoader]:
-    """Create DataLoaders for all splits ('training', 'validation', 'evaluation').
 
-    Args:
-        data_dir: Root directory of processed dataset (containing training, validation, evaluation).
-        batch_size: Batch size for all loaders.
-        image_size: Target square image dimension (e.g., 128 or 224 px).
-        num_workers: Number of subprocesses for data loading.
-        pin_memory: Whether to pin memory for faster GPU transfer.
-        use_imagenet_stats: Use ImageNet mean/std if True; Food-11 stats if False.
-        randaugment: Whether to apply RandAugment in the training pipeline.
-        random_erasing_p: Probability of RandomErasing in training (0 to disable).
-        drop_last_train: Whether to drop the last incomplete training batch.
-
-    Returns:
-        Dict mapping split name ('training', 'validation', 'evaluation') to its DataLoader.
-    """
     mean = IMAGENET_MEAN if use_imagenet_stats else FOOD11_MEAN
     std = IMAGENET_STD if use_imagenet_stats else FOOD11_STD
 
