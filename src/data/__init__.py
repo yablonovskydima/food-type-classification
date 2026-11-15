@@ -1,5 +1,3 @@
-"""Data loading, transforms, and dataset utilities for Food-11."""
-
 from src.data.constants import (
     CLASS_TO_IDX,
     CLASSES,
