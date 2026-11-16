@@ -72,7 +72,7 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
 - scikit-learn (metrics), matplotlib / seaborn (plots)
 - TensorBoard (training curves)
 - pytorch-grad-cam (interpretability)
-- Gradio (demo), FastAPI (inference API), ONNX Runtime
+- Streamlit (demo), FastAPI (inference API), ONNX Runtime
 - Docker
 
 ---
@@ -83,7 +83,37 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
 - [ ] ResNet-18 trained from scratch
 - [ ] Scratch vs pretrained comparison
 - [ ] Error analysis, confusion matrix, Grad-CAM
-- [ ] ONNX export, inference API, Gradio demo
+- [x] CLI inference, FastAPI service, Streamlit demo (trained checkpoint required)
+- [ ] ONNX export and Docker packaging
+
+---
+
+## Streamlit demo (#22)
+
+From the repository root, start the demo:
+
+```bash
+uv run --extra app python -m streamlit run app/ui/streamlit_app.py
+```
+
+Open the local URL shown in the terminal (normally `http://localhost:8501`). In the
+sidebar's **Model settings**, select a local trained Food-11 checkpoint, input size,
+normalization (Food-11 for scratch, ImageNet for the reference), and device. These
+must match training. Alternatively, set the `CHECKPOINT_PATH` environment variable
+before starting. Checkpoints use the existing `FoodPredictor` loading format and
+canonical class order; no checkpoint means predictions stay disabled.
+
+Upload a JPG/PNG (up to 10 MB and 20 megapixels), then choose **Identify food**.
+The photo and horizontal confidence chart appear side by side; switch between
+Top-3 and Top-5 without rerunning inference. Changed photos, weights, or model
+settings invalidate old results. Models are cached, and uploaded photos are kept
+in memory rather than saved to disk. The demo calls local inference directly;
+running the FastAPI server is not required.
+
+The nutrition cards show **one named example food per predicted category**, per
+100 g, with a direct USDA FoodData Central source. These are illustrative SR Legacy
+reference values, verified on 2026-11-17, not class averages or estimates of the
+uploaded meal, its ingredients, or portion size. They work offline after installation.
 
 ---
 
