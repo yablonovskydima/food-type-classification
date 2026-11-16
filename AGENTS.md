@@ -77,9 +77,9 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 7. ⬜ Training loop with configs, AMP, checkpoints, TensorBoard (`src/training`)
 8. ⬜ Train ResNet-18 from scratch — **main experiment**
 9. ⬜ Train pretrained reference, compare curves
-10. ⬜ Evaluation on the test split: accuracy, top-3, macro-F1, confusion matrix (`src/evaluation`)
-11. ⬜ Error analysis, Grad-CAM
-12. ⬜ Inference + API / demo (`src/inference`, `app/api`)
+10. ✅ Evaluation pipeline: accuracy, top-3, macro-F1, per-class metrics/AUC, confusion matrices (`src/evaluation`, issue #23); final test run awaits trained checkpoints
+11. ✅ Grad-CAM and confidence-ranked error reports (issue #23); final-model interpretation awaits trained checkpoints
+12. ✅ CLI inference + FastAPI (`src/inference`, `app/api`); web demo still open (issue #22)
 
 Tasks are tracked as GitHub issues; reference the issue in the PR.
 
@@ -115,6 +115,8 @@ Rule of thumb: ML logic goes into `src/`; `app/` and `scripts/` only call it.
 - `main` — stable, only updated from `dev`.
 - `dev` — integration branch.
 - Feature work happens on a separate branch per task and is merged into `dev` through a pull request.
+- For each task, commit validated changes, push the feature branch, and open a PR targeting `dev`.
+  If committing, pushing, or opening the PR is not possible, tell the user which step failed and why.
 - Never commit: `.env`, Kaggle tokens, anything in `data/`, `checkpoints/`, `runs/`, model weights (`*.pt`, `*.onnx`).
 
 ## Notes for agents
