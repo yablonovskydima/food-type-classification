@@ -90,7 +90,8 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 9. ⬜ Train pretrained reference, compare curves
 10. ⬜ Evaluation on the test split: accuracy, top-3, macro-F1, confusion matrix (`src/evaluation`)
 11. ⬜ Error analysis, Grad-CAM
-12. ⬜ Inference + API / demo (`src/inference`, `app/api`)
+12. ⬜ Inference + API / demo (`src/inference`, `app/api`, `app/ui`): CLI and FastAPI done;
+    Streamlit demo UI ready (issue #22), still to be checked with a trained checkpoint
 13. ✅ ONNX export, parity checks, CPU benchmarks and PyTorch-free inference (issue #12,
     `src/inference/onnx_*`); final-model export awaits a trained checkpoint
 
@@ -101,6 +102,7 @@ Tasks are tracked as GitHub issues; reference the issue in the PR.
 ```
 .github/workflows/   CI
 app/api/             inference API (FastAPI) — depends on src, never the other way round
+app/ui/              Streamlit demo using the local inference engine (issue #22)
 scripts/             one-command utilities: download_data.py, prepare_data.py, compute_stats.py
 src/
   data/              datasets, transforms, samplers

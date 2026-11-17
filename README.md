@@ -116,7 +116,7 @@ The pipeline is tested on synthetic data; final metrics require a trained checkp
 - scikit-learn (metrics), matplotlib / seaborn (plots)
 - TensorBoard (training curves)
 - pytorch-grad-cam (interpretability)
-- Gradio (demo), FastAPI (inference API), ONNX Runtime
+- Streamlit (demo), FastAPI (inference API), ONNX Runtime
 - Docker
 
 ---
@@ -164,7 +164,35 @@ on a CPU one epoch at 224 px takes tens of minutes.
 - [ ] ResNet-18 trained from scratch
 - [ ] Scratch vs pretrained comparison
 - [ ] Error analysis, confusion matrix, Grad-CAM
-- [ ] ONNX export, inference API, Gradio demo
+- [x] CLI inference, FastAPI service
+- [ ] Streamlit demo (UI ready; to be checked with a trained checkpoint)
+- [ ] ONNX export and Docker packaging
+
+---
+
+## Streamlit demo (#22)
+
+From the repository root, start the demo:
+
+```bash
+uv run --extra app python -m streamlit run app/ui/streamlit_app.py
+```
+
+Open the local URL shown in the terminal (normally `http://localhost:8501`). In the
+sidebar's **Model settings**, pick a trained checkpoint, the input size (128 or 224 px),
+normalization (Food-11 for the from-scratch model, ImageNet for the pretrained reference)
+and device. Input size and normalization must match the settings the checkpoint was trained with.
+
+The demo lists every `.pt` / `.pth` file in `checkpoints/`. Set `CHECKPOINT_DIR` to look in
+another folder, or `CHECKPOINT_PATH` to add a specific file and select it by default.
+Without a checkpoint, predictions stay disabled.
+
+Upload a JPG/PNG (up to 10 MB and 20 megapixels), then choose **Identify food**.
+The photo and a horizontal confidence chart appear side by side; switch between
+Top-3 and Top-5 without rerunning inference. Changed photos, weights, or model
+settings invalidate old results. If the model cannot be loaded, the error message shows the reason.
+Models are cached, and uploaded photos are kept in memory rather than saved to disk.
+The demo calls local inference directly; running the FastAPI server is not required.
 
 ---
 
