@@ -27,8 +27,13 @@ def main() -> None:
     name = f"food-api-smoke-{uuid.uuid4().hex[:10]}"
     demo_name = f"food-demo-smoke-{uuid.uuid4().hex[:10]}"
     with tempfile.TemporaryDirectory(prefix="food-api-smoke-") as directory:
-        root = Path(directory).resolve()
-        assert root.parent == Path(tempfile.gettempdir()).resolve()
+        temporary_root = Path(directory).resolve()
+        assert temporary_root.parent == Path(tempfile.gettempdir()).resolve()
+        # TemporaryDirectory is 0700 on Linux. Mount a readable child, keeping
+        # the host-only parent private while allowing container UID 10001 access.
+        root = temporary_root / "models"
+        root.mkdir()
+        root.chmod(0o755)
         script = (
             "import torch; from pathlib import Path; from PIL import Image; "
             "from src.models import build_model; from src.data.constants import CLASSES; "
