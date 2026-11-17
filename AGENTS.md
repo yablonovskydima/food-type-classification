@@ -67,8 +67,14 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
   (`src/data/class_balance.py`, `src/training/losses.py`). Default `weighted_loss`
   (inverse-frequency class weights from the training split); `weighted_sampler` balances batches
   instead. Never use both at once — pass the same strategy to both functions.
-- Experiment settings live in YAML configs, not in code. Fix all random seeds.
-- Logging to TensorBoard (`runs/`), checkpoints to `checkpoints/` — both git-ignored.
+- Experiment settings live in YAML configs (`configs/*.yaml`, loaded into `TrainConfig` in
+  `src/training/config.py`; unknown keys are rejected), not in code. Fix all random seeds.
+- Train with `uv run python -m src.training.cli --config configs/<experiment>.yaml`.
+  Validation runs after every epoch; `checkpoints/<experiment>/best.pt` (weights + metadata:
+  image size, normalisation, epoch, val metrics) is the model for evaluation/inference,
+  `last.pt` is the full state for `--resume`, `history.json` holds per-epoch metrics.
+  Resuming requires the same config; an existing run is never overwritten.
+- Logging to TensorBoard (`runs/<experiment>`), checkpoints to `checkpoints/` — both git-ignored.
 
 ## Plan and status
 
@@ -79,7 +85,7 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 5. ✅ Dataset / transforms / DataLoaders (`src/data`), class-imbalance handling (issue #5);
    comparing weighted loss vs sampler by per-class recall needs the training loop
 6. ✅ Model factory: ResNet-18 scratch / pretrained (`src/models`)
-7. ⬜ Training loop with configs, AMP, checkpoints, TensorBoard (`src/training`)
+7. ✅ Training loop with configs, AMP, checkpoints, TensorBoard (`src/training`, issue #7)
 8. ⬜ Train ResNet-18 from scratch — **main experiment**
 9. ⬜ Train pretrained reference, compare curves
 10. ⬜ Evaluation on the test split: accuracy, top-3, macro-F1, confusion matrix (`src/evaluation`)

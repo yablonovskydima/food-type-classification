@@ -77,6 +77,43 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
 
 ---
 
+## Training (#7)
+
+Each experiment is a YAML file in `configs/`:
+
+- `resnet18_scratch.yaml` — main model, random initialisation, SGD + OneCycle, up to 80 epochs;
+- `resnet18_pretrained.yaml` — reference model from ImageNet weights, AdamW + cosine, up to 25 epochs.
+
+```bash
+uv run python -m src.training.cli --config configs/resnet18_scratch.yaml
+```
+
+After every epoch the model is validated. Results go to `checkpoints/<experiment>/`:
+
+- `best.pt` — weights with the best validation macro-F1 plus metadata (image size,
+  normalisation, epoch, metrics); use it for evaluation, inference and the demo;
+- `last.pt` — full training state, used to continue an interrupted run;
+- `history.json` — per-epoch loss, accuracy, macro-F1 and learning rate.
+
+Training stops early when validation macro-F1 has not improved for `early_stopping_patience`
+epochs. An existing run is never overwritten: continue it with
+
+```bash
+uv run python -m src.training.cli --config configs/resnet18_scratch.yaml --resume checkpoints/resnet18_scratch/last.pt
+```
+
+or change `experiment` in the config to start a new one. Follow training live with:
+
+```bash
+uv run tensorboard --logdir runs
+```
+
+Useful options: `--device cpu|cuda`, `--num-workers 0` (if data loading fails on Windows),
+`--epochs N`, and `--limit-batches N` for a quick smoke test. Full training needs a CUDA GPU:
+on a CPU one epoch at 224 px takes tens of minutes.
+
+---
+
 ## Roadmap
 
 - [ ] Data pipeline and EDA
