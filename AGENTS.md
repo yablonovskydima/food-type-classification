@@ -63,6 +63,10 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
   reference model uses ImageNet statistics instead.
 - SGD (momentum 0.9) or AdamW, OneCycle / cosine LR schedule, 60–100 epochs for the scratch model.
 - Label smoothing 0.1, weight decay 5e-4, mixed precision (AMP), early stopping on validation macro-F1.
+- Class imbalance: `imbalance` option of `create_dataloaders` / `build_criterion`
+  (`src/data/class_balance.py`, `src/training/losses.py`). Default `weighted_loss`
+  (inverse-frequency class weights from the training split); `weighted_sampler` balances batches
+  instead. Never use both at once — pass the same strategy to both functions.
 - Experiment settings live in YAML configs, not in code. Fix all random seeds.
 - Logging to TensorBoard (`runs/`), checkpoints to `checkpoints/` — both git-ignored.
 
@@ -72,7 +76,8 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 2. ✅ Dataset download script
 3. ✅ Dataset processing script (dedup, resize, rename)
 4. ✅ EDA notebook (class distribution, examples, mean/std)
-5. ✅ Dataset / transforms / DataLoaders (`src/data`); class-imbalance handling still open (issue #5)
+5. ✅ Dataset / transforms / DataLoaders (`src/data`), class-imbalance handling (issue #5);
+   comparing weighted loss vs sampler by per-class recall needs the training loop
 6. ✅ Model factory: ResNet-18 scratch / pretrained (`src/models`)
 7. ⬜ Training loop with configs, AMP, checkpoints, TensorBoard (`src/training`)
 8. ⬜ Train ResNet-18 from scratch — **main experiment**
