@@ -1,5 +1,4 @@
-"""Headless report figures for slides and error analysis."""
-
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +12,12 @@ import seaborn as sns
 from PIL import Image
 
 
+def display_name(class_name: str) -> str:
+    return class_name.replace("_", " ").title()
+
+
 def save_metric_plots(metrics: dict[str, Any], output_dir: Path) -> None:
-    labels = [name.replace("_", " ").title() for name in metrics["classes"]]
+    labels = [display_name(name) for name in metrics["classes"]]
     counts = np.asarray(metrics["confusion_matrix"])
     totals = counts.sum(axis=1, keepdims=True)
     normalized = np.divide(counts, totals, out=np.zeros_like(counts, dtype=float), where=totals > 0)
@@ -49,15 +52,22 @@ def save_metric_plots(metrics: dict[str, Any], output_dir: Path) -> None:
     plt.close(fig)
 
 
-def save_gradcam_plot(image: Image.Image, heatmap: np.ndarray, path: Path, title: str) -> None:
-    """The image and heatmap must use exactly the same resize/center-crop geometry."""
-    fig, axes = plt.subplots(1, 2, figsize=(9, 4.5), layout="constrained")
+def save_gradcam_plot(
+    image: Image.Image,
+    heatmaps: Sequence[tuple[str, np.ndarray]],
+    path: Path,
+    title: str,
+) -> None:
+    fig, axes = plt.subplots(
+        1, 1 + len(heatmaps), figsize=(4.5 * (1 + len(heatmaps)), 4.5), layout="constrained"
+    )
     for ax in axes:
         ax.imshow(image)
         ax.axis("off")
     axes[0].set_title("Model input crop")
-    axes[1].imshow(heatmap, cmap="jet", alpha=0.45, vmin=0, vmax=1)
-    axes[1].set_title("Grad-CAM: predicted class")
+    for ax, (heatmap_title, heatmap) in zip(axes[1:], heatmaps, strict=True):
+        ax.imshow(heatmap, cmap="jet", alpha=0.45, vmin=0, vmax=1)
+        ax.set_title(heatmap_title)
     fig.suptitle(title)
     fig.savefig(path, dpi=180)
     plt.close(fig)

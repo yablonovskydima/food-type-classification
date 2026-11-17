@@ -1,5 +1,3 @@
-"""Evaluate only the requested split and persist reproducible report artifacts."""
-
 import csv
 import hashlib
 import json
@@ -10,13 +8,13 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader
-from torchvision.transforms import Compose
 
 from src.data.constants import DEFAULT_IMAGE_SIZE
 from src.data.dataset import get_dataset
+from src.data.transforms import get_eval_geometry_transforms
 from src.evaluation.gradcam import grad_cam
 from src.evaluation.metrics import compute_metrics
-from src.evaluation.reports import save_gradcam_plot, save_metric_plots
+from src.evaluation.reports import display_name, save_gradcam_plot, save_metric_plots
 from src.inference.predictor import FoodPredictor
 
 
@@ -25,7 +23,7 @@ def evaluate_checkpoint(
     data_dir: str | Path,
     output_dir: str | Path,
     *,
-    split: str = "evaluation",
+    split: str = "validation",
     image_size: int = DEFAULT_IMAGE_SIZE,
     use_imagenet_stats: bool = False,
     batch_size: int = 32,
@@ -33,11 +31,6 @@ def evaluate_checkpoint(
     device: str | None = None,
     gradcam_examples: int = 8,
 ) -> dict[str, Any]:
-    """Require final trained weights; never silently evaluate random initialisation.
-
-    Use validation for development. Run evaluation once per final model; output must
-    be empty so results from different checkpoints cannot accidentally be mixed.
-    """
     if split not in {"validation", "evaluation"}:
         raise ValueError("Split must be validation or evaluation")
     if image_size <= 0 or batch_size <= 0 or num_workers < 0 or gradcam_examples < 0:
@@ -102,7 +95,6 @@ def evaluate_checkpoint(
             )
     save_metric_plots(metrics, output_dir)
 
-    # Highest-confidence errors first; fall back to correct examples if there are no errors.
     candidates = np.flatnonzero(predictions != labels)
     if not len(candidates):
         candidates = np.arange(len(labels))
@@ -111,20 +103,32 @@ def evaluate_checkpoint(
     if len(selected):
         cam_dir = output_dir / "gradcam"
         cam_dir.mkdir()
-        geometry = Compose(predictor.transform.transforms[:2])
+        geometry = get_eval_geometry_transforms(image_size=image_size)
+        target_layer = predictor.model.layer4[-1]
         for index in selected:
             path, label = dataset.samples[index]
             with Image.open(path) as source:
                 image = source.convert("RGB")
             inputs = predictor.transform(image).unsqueeze(0).to(predictor.device)
             prediction = int(predictions[index])
-            heatmap = grad_cam(predictor.model, inputs, predictor.model.layer4[-1], prediction)
+            true_name = display_name(predictor.classes[label])
+            predicted_name = display_name(predictor.classes[prediction])
+            heatmaps = [
+                (
+                    f"Grad-CAM: predicted ({predicted_name})",
+                    grad_cam(predictor.model, inputs, target_layer, prediction).numpy(),
+                )
+            ]
+            if prediction != label:
+                heatmaps.append(
+                    (
+                        f"Grad-CAM: true ({true_name})",
+                        grad_cam(predictor.model, inputs, target_layer, label).numpy(),
+                    )
+                )
             filename = f"{int(index):05d}_{Path(path).stem}.png"
-            title = (
-                f"True: {predictor.classes[label]} | Predicted: "
-                f"{predictor.classes[prediction]} ({confidences[index]:.1%})"
-            )
-            save_gradcam_plot(geometry(image), heatmap.numpy(), cam_dir / filename, title)
+            title = f"True: {true_name} | Predicted: {predicted_name} ({confidences[index]:.1%})"
+            save_gradcam_plot(geometry(image), heatmaps, cam_dir / filename, title)
             examples.append(
                 {
                     "image": str(Path(path).relative_to(Path(data_dir))),

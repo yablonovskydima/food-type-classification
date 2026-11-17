@@ -65,48 +65,29 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
 
 ---
 
-## Tech stack
-
-- Python 3.13+
-- PyTorch + torchvision
-- scikit-learn (metrics), matplotlib / seaborn (plots)
-- TensorBoard (training curves)
-- pytorch-grad-cam (interpretability)
-- Gradio (demo), FastAPI (inference API), ONNX Runtime
-- Docker
-
----
-
-## Roadmap
-
-- [x] Data pipeline and EDA
-- [ ] ResNet-18 trained from scratch
-- [ ] Scratch vs pretrained comparison
-- [ ] Error analysis, confusion matrix, Grad-CAM
-- [x] CLI inference and FastAPI service
-- [x] Evaluation reports and Grad-CAM implementation (final-model evaluation pending)
-- [ ] ONNX export, Streamlit demo, Docker packaging
-
----
-
 ## Evaluation and error analysis (#23)
 
-Evaluate a **trained, final Food-11 checkpoint** with:
+Evaluate a trained checkpoint on the **validation** split (the default):
 
 ```bash
-uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --output-dir reports/scratch_final
+uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --output-dir reports/scratch_val
 ```
 
-The default data root is `data/processed/food11` and the default split is `evaluation`
-(the held-out test set). Use this split **once per final model**; use `--split validation`
-when developing or comparing configurations. No training data or other splits are loaded.
-The output directory must be new or empty, preventing accidental mixing of reports.
+The `evaluation` split is the held-out test set. Run it **once per final model** only,
+never to compare or tune configurations:
+
+```bash
+uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --split evaluation --output-dir reports/scratch_test
+```
+
+Only the requested split is loaded. The output directory must be new or empty, so reports from
+different checkpoints cannot be mixed. `reports/` is git-ignored; copy the figures you want to
+keep (e.g. for the presentation) into `docs/`.
 
 Match preprocessing to training: `--image-size 128` for a 128 px model, or the default
 224; add `--imagenet-stats` for the pretrained reference trained with ImageNet normalization.
 Checkpoint loading follows the inference engine: a raw state dict, `model_state_dict`,
 or `state_dict`, with an 11-class ResNet-18 output in `src.data.constants.CLASSES` order.
-Preprocessing is supplied explicitly, not inferred from checkpoint metadata.
 
 Options include `--device cpu`, `--batch-size 32`, `--num-workers 0` (Windows-friendly),
 and `--gradcam-examples 8` (0 disables Grad-CAM). Reports contain:
@@ -119,13 +100,34 @@ and `--gradcam-examples 8` (0 disables Grad-CAM). Reports contain:
 - `predictions.npz`: integer targets and full-precision probabilities, in CSV image order.
 - `confusion_matrix_counts.png`, `confusion_matrix_normalized.png` (row-normalized),
   and `per_class_metrics.png`, suitable for presentation slides.
-- `gradcam/`: highest-confidence misclassifications, or correct examples if there are no
-  errors. Each plot shows the actual model input crop and predicted-class Grad-CAM from
-  the last ResNet block. Heatmaps align with the resize/center crop used in inference.
+- `gradcam/`: the highest-confidence misclassifications (or correct examples if there are no
+  errors). Each plot shows the model input crop, the Grad-CAM for the predicted class and,
+  for errors, the Grad-CAM for the true class, from the last ResNet block.
 
 Grad-CAM uses PyTorch autograd directly; evaluation needs only the core dependencies.
-Synthetic tests exercise metrics, checkpoint loading and complete report generation without
-the real dataset or a GPU. Final test metrics still require the trained checkpoint.
+The pipeline is tested on synthetic data; final metrics require a trained checkpoint.
+
+---
+
+## Tech stack
+
+- Python 3.12+
+- PyTorch + torchvision
+- scikit-learn (metrics), matplotlib / seaborn (plots)
+- TensorBoard (training curves)
+- pytorch-grad-cam (interpretability)
+- Gradio (demo), FastAPI (inference API), ONNX Runtime
+- Docker
+
+---
+
+## Roadmap
+
+- [ ] Data pipeline and EDA
+- [ ] ResNet-18 trained from scratch
+- [ ] Scratch vs pretrained comparison
+- [ ] Error analysis, confusion matrix, Grad-CAM
+- [ ] ONNX export, inference API, Gradio demo
 
 ---
 

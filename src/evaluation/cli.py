@@ -1,5 +1,3 @@
-"""Run with: uv run python -m src.evaluation.cli --help."""
-
 import argparse
 import sys
 from pathlib import Path
@@ -17,7 +15,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output-dir", type=Path, required=True, help="New or empty report directory"
     )
-    parser.add_argument("--split", choices=("validation", "evaluation"), default="evaluation")
+    parser.add_argument(
+        "--split",
+        choices=("validation", "evaluation"),
+        default="validation",
+        help="'evaluation' is the held-out test set: run it once per final model",
+    )
     parser.add_argument("--image-size", type=int, default=DEFAULT_IMAGE_SIZE)
     parser.add_argument(
         "--imagenet-stats",

@@ -1,5 +1,3 @@
-"""Synthetic checks: metric arithmetic, gradient attribution, and report integration."""
-
 import csv
 import json
 from pathlib import Path
@@ -172,8 +170,16 @@ def test_evaluation_cli_writes_complete_reports_without_other_splits(
         with Image.open(plot) as image:
             image.verify()
     assert len(list(output.rglob("*.png"))) == 5
+    for plot in (output / "gradcam").glob("*.png"):
+        with Image.open(plot) as image:
+            assert image.width > 2.5 * image.height
     with pytest.raises(FileExistsError):
         evaluate_checkpoint(checkpoint, data_dir, output)
+
+
+def test_cli_defaults_to_validation_split(tmp_path: Path) -> None:
+    options = parse_args(["--checkpoint", "model.pt", "--output-dir", str(tmp_path)])
+    assert options.split == "validation"
 
 
 def test_cli_requires_checkpoint_and_reports_missing_file(tmp_path: Path, capsys) -> None:
