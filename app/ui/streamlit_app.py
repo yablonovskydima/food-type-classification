@@ -71,6 +71,17 @@ def main() -> None:
     st.markdown("### A food photo. Eleven possibilities.")
     st.write("Upload a photo to explore the food categories the model recognises.")
 
+    try:
+        size_index = IMAGE_SIZES.index(int(os.getenv("IMAGE_SIZE") or DEFAULT_IMAGE_SIZE))
+        normalization_index = ["food11", "imagenet"].index(os.getenv("NORMALIZATION") or "food11")
+        device_index = ["auto", "cpu", "cuda"].index(os.getenv("DEVICE") or "auto")
+    except ValueError:
+        st.error(
+            "Check configuration: IMAGE_SIZE=128|224, NORMALIZATION=food11|imagenet, "
+            "DEVICE=auto|cpu|cuda."
+        )
+        return
+
     checkpoints = find_checkpoints()
     with st.sidebar:
         st.header("Food-11 demo")
@@ -82,10 +93,20 @@ def main() -> None:
                 placeholder="No checkpoints found",
             )
             image_size = st.selectbox(
-                "Input size (px)", IMAGE_SIZES, index=IMAGE_SIZES.index(DEFAULT_IMAGE_SIZE)
+                "Input size (px)",
+                IMAGE_SIZES,
+                index=size_index,
             )
-            normalization = st.selectbox("Normalization", ["Food-11", "ImageNet"])
-            device = st.selectbox("Device", ["auto", "cpu", "cuda"])
+            normalization = st.selectbox(
+                "Normalization",
+                ["Food-11", "ImageNet"],
+                index=normalization_index,
+            )
+            device = st.selectbox(
+                "Device",
+                ["auto", "cpu", "cuda"],
+                index=device_index,
+            )
             st.caption(
                 "Input size and normalization must match the checkpoint's training settings: "
                 "Food-11 for the from-scratch model, ImageNet for the pretrained reference."

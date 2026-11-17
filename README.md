@@ -242,6 +242,65 @@ final trained checkpoint remains a separate step once training is complete.
 
 ---
 
+## Docker: API and demo (#14)
+
+Install Docker Desktop with Linux containers enabled (or Docker Engine with Compose).
+Python is not needed on the host. From the repository root:
+
+1. Copy `.docker.env.example` to `.docker.env`.
+2. Set `MODEL_CHECKPOINT` to a trained `.pt` file, using a project-relative or absolute
+   host path. Set `IMAGE_SIZE` (128 or 224) and `NORMALIZATION` (food11 or imagenet) to
+   match training. `API_PORT` and `DEMO_PORT` default to 8000 and 8501.
+3. Start both services:
+
+   ```bash
+   docker compose --env-file .docker.env up --build -d --wait
+   ```
+
+Open the demo at `http://localhost:8501` or the API's interactive docs at
+`http://localhost:8000/docs`. The demo calls local inference in its own container;
+the API is not required for it. Each service mounts the same checkpoint read-only
+at `/models/model.pt`. Demo controls initially use the environment settings and can
+still be changed on the page.
+
+Run one service by appending `api` or `demo` to the `up` command. Inspect logs or stop:
+
+```bash
+docker compose --env-file .docker.env logs -f
+docker compose --env-file .docker.env down
+```
+
+The API requires a checkpoint at startup. It reads input size and normalization
+from `best.pt` metadata or `last.pt` config, rejects conflicting environment settings,
+and returns 503 if its model is unavailable. Older checkpoints without metadata use
+the supplied environment values. The demo's healthcheck verifies that its web server
+is ready; its model loads on the first prediction. API health additionally checks
+that the model is loaded. Missing host files fail the bind mount instead of creating
+empty checkpoint directories.
+
+Images run on CPU as a non-root user. The shared runtime installs only serving
+dependencies at versions constrained by `uv.lock`, with CPU torch/torchvision wheels
+from the official PyTorch index. Datasets, weights, `.git`, local environments and
+credentials are excluded from the build context. Compose exposes ports on localhost.
+GPU serving is outside this setup.
+
+Developer validation (the smoke script itself uses only Python's standard library):
+
+```bash
+docker build --target api -t food-classifier-api:local .
+docker build --target demo -t food-classifier-demo:local .
+python docker/smoke_test.py
+```
+
+The smoke test creates temporary random weights and a photo, starts both containers,
+checks API upload/prediction and healthchecks, and runs a real Streamlit prediction
+and Top-5 rerun through AppTest inside the demo container. It also checks CPU-only
+PyTorch, non-root execution and API failure without a checkpoint. Only its own
+containers and temporary files are removed; the real dataset and checkpoints are
+untouched. CI runs the same builds and test. Final model quality depends on training.
+
+---
+
 ## License & credits
 
 - Code: MIT

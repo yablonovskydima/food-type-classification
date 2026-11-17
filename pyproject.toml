@@ -35,6 +35,12 @@ app = [
     "onnxscript>=0.7.2",
 ]
 dev = ["pytest", "ruff", "pre-commit", "jupyter"]
+serving = [
+    "fastapi>=0.162.5",
+    "python-multipart>=0.0.33",
+    "streamlit>=1.67.0",
+    "uvicorn>=0.54.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["src*"]

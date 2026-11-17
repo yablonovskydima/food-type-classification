@@ -94,6 +94,8 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
     Streamlit demo UI ready (issue #22), still to be checked with a trained checkpoint
 13. ✅ ONNX export, parity checks, CPU benchmarks and PyTorch-free inference (issue #12,
     `src/inference/onnx_*`); final-model export awaits a trained checkpoint
+14. ✅ Docker CPU images for API and Streamlit, Compose, healthchecks and real-container
+    smoke tests (issue #14); trained weights are mounted read-only at runtime
 
 Tasks are tracked as GitHub issues; reference the issue in the PR.
 

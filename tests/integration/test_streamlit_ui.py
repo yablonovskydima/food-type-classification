@@ -74,6 +74,22 @@ def test_ui_requires_trained_checkpoint(make_app: AppFactory) -> None:
     assert not app.metric
 
 
+def test_container_settings_supply_initial_controls(make_app: AppFactory, monkeypatch) -> None:
+    monkeypatch.setenv("IMAGE_SIZE", "128")
+    monkeypatch.setenv("NORMALIZATION", "imagenet")
+    monkeypatch.setenv("DEVICE", "cpu")
+    app = make_app()
+    assert not app.exception
+    assert [widget.value for widget in app.selectbox][1:] == [128, "ImageNet", "cpu"]
+
+
+def test_invalid_container_settings_show_a_clear_error(make_app: AppFactory, monkeypatch) -> None:
+    monkeypatch.setenv("IMAGE_SIZE", "bad")
+    app = make_app()
+    assert not app.exception
+    assert "Check configuration" in app.error[0].value
+
+
 def test_checkpoints_are_discovered(
     make_app: AppFactory, checkpoint_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

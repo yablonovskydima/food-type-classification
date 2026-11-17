@@ -1,0 +1,19 @@
+name: Application containers
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build --target api -t food-classifier-api:local .
+      - name: Build demo image
+        run: docker build --target demo -t food-classifier-demo:local .
+      - name: Exercise both containers with synthetic weights
+        run: python docker/smoke_test.py
