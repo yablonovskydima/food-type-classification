@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    environment:
+      CHECKPOINT_PATH: /models/model.pt
+      REQUIRE_CHECKPOINT: "1"
+      DEVICE: cpu
+      IMAGE_SIZE: ${IMAGE_SIZE:-}
+      NORMALIZATION: ${NORMALIZATION:-}
+    volumes:
+      - type: bind
+        source: ${MODEL_CHECKPOINT:?Set MODEL_CHECKPOINT to a trained .pt checkpoint}
+        target: /models/model.pt
+        read_only: true
+        bind:
+          create_host_path: false
+    init: true
+    security_opt:
+      - no-new-privileges:true

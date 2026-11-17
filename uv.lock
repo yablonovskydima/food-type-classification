@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -869,6 +869,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+api = [
+    { name = "fastapi" },
+    { name = "python-multipart" },
+    { name = "uvicorn" },
+]
 app = [
     { name = "fastapi" },
     { name = "grad-cam" },
@@ -888,6 +893,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
+    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.162.5" },
     { name = "fastapi", marker = "extra == 'app'" },
     { name = "grad-cam", marker = "extra == 'app'" },
     { name = "gradio", marker = "extra == 'app'" },
@@ -901,6 +907,7 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "python-dotenv" },
+    { name = "python-multipart", marker = "extra == 'api'", specifier = ">=0.0.33" },
     { name = "python-multipart", marker = "extra == 'app'" },
     { name = "pyyaml" },
     { name = "ruff", marker = "extra == 'dev'" },
@@ -911,9 +918,10 @@ requires-dist = [
     { name = "torch", specifier = ">=2.6" },
     { name = "torchvision", specifier = ">=0.21" },
     { name = "tqdm" },
+    { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.54.0" },
     { name = "uvicorn", marker = "extra == 'app'" },
 ]
-provides-extras = ["app", "dev"]
+provides-extras = ["app", "dev", "api"]
 
 [[package]]
 name = "fqdn"

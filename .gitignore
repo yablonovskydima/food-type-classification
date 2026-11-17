@@ -24,3 +24,4 @@ Thumbs.db
 
 kaggle.json
 .env
+.docker.env
