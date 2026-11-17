@@ -2,6 +2,11 @@ from pathlib import Path
 
 from torch.utils.data import DataLoader
 
+from src.data.class_balance import (
+    DEFAULT_IMBALANCE_STRATEGY,
+    validate_strategy,
+    weighted_sampler,
+)
 from src.data.constants import (
     DEFAULT_IMAGE_SIZE,
     FOOD11_MEAN,
@@ -23,8 +28,10 @@ def create_dataloaders(
     randaugment: bool = True,
     random_erasing_p: float = 0.2,
     drop_last_train: bool = True,
+    imbalance: str = DEFAULT_IMBALANCE_STRATEGY,
+    seed: int | None = None,
 ) -> dict[str, DataLoader]:
-
+    imbalance = validate_strategy(imbalance)
     mean = IMAGENET_MEAN if use_imagenet_stats else FOOD11_MEAN
     std = IMAGENET_STD if use_imagenet_stats else FOOD11_STD
 
@@ -45,11 +52,18 @@ def create_dataloaders(
     val_dataset = get_dataset(data_dir=data_dir, split="validation", transform=eval_transform)
     test_dataset = get_dataset(data_dir=data_dir, split="evaluation", transform=eval_transform)
 
+    sampler = (
+        weighted_sampler(train_dataset.targets, seed=seed)
+        if imbalance == "weighted_sampler"
+        else None
+    )
+
     loaders = {
         "training": DataLoader(
             train_dataset,
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=sampler is None,
+            sampler=sampler,
             num_workers=num_workers,
             pin_memory=pin_memory,
             drop_last=drop_last_train,

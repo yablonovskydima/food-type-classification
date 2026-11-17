@@ -1,0 +1,22 @@
+experiment: resnet18_pretrained
+pretrained: true
+
+data_dir: data/processed/food11
+image_size: 224
+batch_size: 64
+num_workers: 4
+imbalance: weighted_loss
+randaugment: true
+random_erasing_p: 0.2
+
+epochs: 25
+optimizer: adamw
+lr: 0.0003
+weight_decay: 0.0001
+scheduler: cosine
+warmup_epochs: 1
+label_smoothing: 0.1
+amp: true
+early_stopping_patience: 7
+
+seed: 42

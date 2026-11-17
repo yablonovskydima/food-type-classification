@@ -1,0 +1,22 @@
+experiment: resnet18_scratch
+pretrained: false
+
+data_dir: data/processed/food11
+image_size: 224
+batch_size: 64
+num_workers: 4
+imbalance: weighted_loss
+randaugment: true
+random_erasing_p: 0.2
+
+epochs: 80
+optimizer: sgd
+lr: 0.1
+momentum: 0.9
+weight_decay: 0.0005
+scheduler: onecycle
+label_smoothing: 0.1
+amp: true
+early_stopping_patience: 15
+
+seed: 42

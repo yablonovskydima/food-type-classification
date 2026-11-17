@@ -1,3 +1,10 @@
+from src.data.class_balance import (
+    DEFAULT_IMBALANCE_STRATEGY,
+    IMBALANCE_STRATEGIES,
+    class_counts,
+    class_weights,
+    weighted_sampler,
+)
 from src.data.constants import (
     CLASS_TO_IDX,
     CLASSES,
@@ -17,6 +24,8 @@ __all__ = [
     "CLASSES",
     "CLASS_TO_IDX",
     "DEFAULT_IMAGE_SIZE",
+    "DEFAULT_IMBALANCE_STRATEGY",
+    "IMBALANCE_STRATEGIES",
     "FOOD11_MEAN",
     "FOOD11_STD",
     "Food11Dataset",
@@ -24,8 +33,11 @@ __all__ = [
     "IMAGENET_MEAN",
     "IMAGENET_STD",
     "NUM_CLASSES",
+    "class_counts",
+    "class_weights",
     "create_dataloaders",
     "get_dataset",
     "get_eval_transforms",
     "get_train_transforms",
+    "weighted_sampler",
 ]

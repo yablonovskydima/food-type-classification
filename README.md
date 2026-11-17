@@ -65,6 +65,50 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
 
 ---
 
+## Evaluation and error analysis (#23)
+
+Evaluate a trained checkpoint on the **validation** split (the default):
+
+```bash
+uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --output-dir reports/scratch_val
+```
+
+The `evaluation` split is the held-out test set. Run it **once per final model** only,
+never to compare or tune configurations:
+
+```bash
+uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --split evaluation --output-dir reports/scratch_test
+```
+
+Only the requested split is loaded. The output directory must be new or empty, so reports from
+different checkpoints cannot be mixed. `reports/` is git-ignored; copy the figures you want to
+keep (e.g. for the presentation) into `docs/`.
+
+Match preprocessing to training: `--image-size 128` for a 128 px model, or the default
+224; add `--imagenet-stats` for the pretrained reference trained with ImageNet normalization.
+Checkpoint loading follows the inference engine: a raw state dict, `model_state_dict`,
+or `state_dict`, with an 11-class ResNet-18 output in `src.data.constants.CLASSES` order.
+
+Options include `--device cpu`, `--batch-size 32`, `--num-workers 0` (Windows-friendly),
+and `--gradcam-examples 8` (0 disables Grad-CAM). Reports contain:
+
+- `metrics.json`: accuracy, top-3 accuracy, macro-F1, per-class precision/recall/F1,
+  support and one-vs-rest ROC-AUC, confusion matrix, checkpoint SHA-256, and run settings.
+  Undefined AUC (no positive or negative examples) is JSON `null`; undefined
+  precision/recall/F1 is 0. Macro-F1 includes all 11 classes.
+- `predictions.csv`: image paths relative to the data root, labels, predictions, confidence.
+- `predictions.npz`: integer targets and full-precision probabilities, in CSV image order.
+- `confusion_matrix_counts.png`, `confusion_matrix_normalized.png` (row-normalized),
+  and `per_class_metrics.png`, suitable for presentation slides.
+- `gradcam/`: the highest-confidence misclassifications (or correct examples if there are no
+  errors). Each plot shows the model input crop, the Grad-CAM for the predicted class and,
+  for errors, the Grad-CAM for the true class, from the last ResNet block.
+
+Grad-CAM uses PyTorch autograd directly; evaluation needs only the core dependencies.
+The pipeline is tested on synthetic data; final metrics require a trained checkpoint.
+
+---
+
 ## Tech stack
 
 - Python 3.12+
@@ -74,6 +118,43 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
 - pytorch-grad-cam (interpretability)
 - Streamlit (demo), FastAPI (inference API), ONNX Runtime
 - Docker
+
+---
+
+## Training (#7)
+
+Each experiment is a YAML file in `configs/`:
+
+- `resnet18_scratch.yaml` — main model, random initialisation, SGD + OneCycle, up to 80 epochs;
+- `resnet18_pretrained.yaml` — reference model from ImageNet weights, AdamW + cosine, up to 25 epochs.
+
+```bash
+uv run python -m src.training.cli --config configs/resnet18_scratch.yaml
+```
+
+After every epoch the model is validated. Results go to `checkpoints/<experiment>/`:
+
+- `best.pt` — weights with the best validation macro-F1 plus metadata (image size,
+  normalisation, epoch, metrics); use it for evaluation, inference and the demo;
+- `last.pt` — full training state, used to continue an interrupted run;
+- `history.json` — per-epoch loss, accuracy, macro-F1 and learning rate.
+
+Training stops early when validation macro-F1 has not improved for `early_stopping_patience`
+epochs. An existing run is never overwritten: continue it with
+
+```bash
+uv run python -m src.training.cli --config configs/resnet18_scratch.yaml --resume checkpoints/resnet18_scratch/last.pt
+```
+
+or change `experiment` in the config to start a new one. Follow training live with:
+
+```bash
+uv run tensorboard --logdir runs
+```
+
+Useful options: `--device cpu|cuda`, `--num-workers 0` (if data loading fails on Windows),
+`--epochs N`, and `--limit-batches N` for a quick smoke test. Full training needs a CUDA GPU:
+on a CPU one epoch at 224 px takes tens of minutes.
 
 ---
 
@@ -112,6 +193,52 @@ Top-3 and Top-5 without rerunning inference. Changed photos, weights, or model
 settings invalidate old results. If the model cannot be loaded, the error message shows the reason.
 Models are cached, and uploaded photos are kept in memory rather than saved to disk.
 The demo calls local inference directly; running the FastAPI server is not required.
+
+---
+
+## ONNX export and CPU inference (#12)
+
+Export the final trained model using its saved input size and normalization:
+
+```bash
+uv run --extra app python -m src.inference.onnx_export_cli --checkpoint checkpoints/resnet18_scratch/best.pt --output-dir checkpoints/onnx_scratch
+```
+
+Both `best.pt` (inference metadata) and `last.pt` (training config) are supported.
+For older raw state dictionaries or `state_dict` wrappers without preprocessing metadata,
+provide `--image-size 224 --normalization food11` explicitly (`imagenet` for the reference).
+Overrides that conflict with saved metadata are rejected. Class order must match Food-11.
+
+The output directory must not exist. It is published only after validation succeeds:
+
+- `model.onnx`: self-contained FP32 weights, dynamic batch dimension, fixed input resolution;
+  input `images` is normalized NCHW, output `logits` has 11 columns. Class names, resize/crop,
+  normalization values, and checkpoint SHA-256 are embedded in the model metadata.
+- `export_report.json`: ONNX checker result, PyTorch vs
+  ONNX logit/probability comparisons and top-1 agreement at batch sizes 1 and 3, plus CPU timings
+  and environment details. Verification uses seeded synthetic tensors, not the test split.
+
+CPU benchmarks use batch size 1, the same intra-op thread count for both backends (default 1),
+5 warmup calls and 30 timed calls. Set `--threads`, `--warmup`, or `--iterations` to change these.
+Mean, median, p95 latency and throughput cover forward passes only: loading, image decoding,
+and preprocessing are excluded. Timings are machine-specific; export parity is not a quality score.
+
+Run the exported model on a photo:
+
+```bash
+uv run --extra app python -m src.inference.onnx_predictor --model checkpoints/onnx_scratch/model.onnx --image path/to/dish.jpg --top-k 3
+```
+
+The runtime uses the model's embedded preprocessing settings and Pillow/NumPy equivalents of
+the project's validation transforms. It does not import PyTorch or torchvision. For a separate
+deployment environment, install only `onnxruntime numpy pillow`, copy `model.onnx` and the
+`src/inference/__init__.py` / `src/inference/onnx_predictor.py` files preserving their paths,
+then run `python -m src.inference.onnx_predictor` from their parent project directory.
+The `uv run` commands above use the full development environment, so they still install PyTorch.
+
+Tests exercise real ResNet-18 export with random weights, preprocessing equivalence for varied
+image shapes/modes, and inference in a subprocess that blocks PyTorch imports. Exporting the
+final trained checkpoint remains a separate step once training is complete.
 
 ---
 
