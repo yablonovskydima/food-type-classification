@@ -91,6 +91,8 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 10. ⬜ Evaluation on the test split: accuracy, top-3, macro-F1, confusion matrix (`src/evaluation`)
 11. ⬜ Error analysis, Grad-CAM
 12. ⬜ Inference + API / demo (`src/inference`, `app/api`)
+13. ✅ ONNX export, parity checks, CPU benchmarks and PyTorch-free inference (issue #12,
+    `src/inference/onnx_*`); final-model export awaits a trained checkpoint
 
 Tasks are tracked as GitHub issues; reference the issue in the PR.
 
@@ -126,6 +128,9 @@ Rule of thumb: ML logic goes into `src/`; `app/` and `scripts/` only call it.
 - `main` — stable, only updated from `dev`.
 - `dev` — integration branch.
 - Feature work happens on a separate branch per task and is merged into `dev` through a pull request.
+- For each task, commit validated changes, push the feature branch, and open a PR targeting `dev`.
+  If committing, pushing, or opening the PR is not possible, tell the user which step failed and why.
+- Keep PR descriptions brief: describe the change, validation, and related issue.
 - Never commit: `.env`, Kaggle tokens, anything in `data/`, `checkpoints/`, `runs/`, model weights (`*.pt`, `*.onnx`).
 
 ## Notes for agents

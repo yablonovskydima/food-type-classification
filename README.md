@@ -124,6 +124,52 @@ on a CPU one epoch at 224 px takes tens of minutes.
 
 ---
 
+## ONNX export and CPU inference (#12)
+
+Export the final trained model using its saved input size and normalization:
+
+```bash
+uv run --extra app python -m src.inference.onnx_export_cli --checkpoint checkpoints/resnet18_scratch/best.pt --output-dir checkpoints/onnx_scratch
+```
+
+Both `best.pt` (inference metadata) and `last.pt` (training config) are supported.
+For older raw state dictionaries or `state_dict` wrappers without preprocessing metadata,
+provide `--image-size 224 --normalization food11` explicitly (`imagenet` for the reference).
+Overrides that conflict with saved metadata are rejected. Class order must match Food-11.
+
+The output directory must not exist. It is published only after validation succeeds:
+
+- `model.onnx`: self-contained FP32 weights, dynamic batch dimension, fixed input resolution;
+  input `images` is normalized NCHW, output `logits` has 11 columns. Class names, resize/crop,
+  normalization values, and checkpoint SHA-256 are embedded in the model metadata.
+- `export_report.json`: ONNX checker result, PyTorch vs
+  ONNX logit/probability comparisons and top-1 agreement at batch sizes 1 and 3, plus CPU timings
+  and environment details. Verification uses seeded synthetic tensors, not the test split.
+
+CPU benchmarks use batch size 1, the same intra-op thread count for both backends (default 1),
+5 warmup calls and 30 timed calls. Set `--threads`, `--warmup`, or `--iterations` to change these.
+Mean, median, p95 latency and throughput cover forward passes only: loading, image decoding,
+and preprocessing are excluded. Timings are machine-specific; export parity is not a quality score.
+
+Run the exported model on a photo:
+
+```bash
+uv run --extra app python -m src.inference.onnx_predictor --model checkpoints/onnx_scratch/model.onnx --image path/to/dish.jpg --top-k 3
+```
+
+The runtime uses the model's embedded preprocessing settings and Pillow/NumPy equivalents of
+the project's validation transforms. It does not import PyTorch or torchvision. For a separate
+deployment environment, install only `onnxruntime numpy pillow`, copy `model.onnx` and the
+`src/inference/__init__.py` / `src/inference/onnx_predictor.py` files preserving their paths,
+then run `python -m src.inference.onnx_predictor` from their parent project directory.
+The `uv run` commands above use the full development environment, so they still install PyTorch.
+
+Tests exercise real ResNet-18 export with random weights, preprocessing equivalence for varied
+image shapes/modes, and inference in a subprocess that blocks PyTorch imports. Exporting the
+final trained checkpoint remains a separate step once training is complete.
+
+---
+
 ## License & credits
 
 - Code: MIT

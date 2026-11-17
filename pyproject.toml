@@ -23,7 +23,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-app = ["gradio", "fastapi", "uvicorn", "python-multipart", "onnx", "onnxruntime", "grad-cam"]
+app = [
+    "gradio",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "onnx",
+    "onnxruntime",
+    "grad-cam",
+    "onnxscript>=0.7.2",
+]
 dev = ["pytest", "ruff", "pre-commit", "jupyter"]
 
 [tool.setuptools.packages.find]
