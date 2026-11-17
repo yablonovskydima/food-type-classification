@@ -65,6 +65,50 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
 
 ---
 
+## Evaluation and error analysis (#23)
+
+Evaluate a trained checkpoint on the **validation** split (the default):
+
+```bash
+uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --output-dir reports/scratch_val
+```
+
+The `evaluation` split is the held-out test set. Run it **once per final model** only,
+never to compare or tune configurations:
+
+```bash
+uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --split evaluation --output-dir reports/scratch_test
+```
+
+Only the requested split is loaded. The output directory must be new or empty, so reports from
+different checkpoints cannot be mixed. `reports/` is git-ignored; copy the figures you want to
+keep (e.g. for the presentation) into `docs/`.
+
+Match preprocessing to training: `--image-size 128` for a 128 px model, or the default
+224; add `--imagenet-stats` for the pretrained reference trained with ImageNet normalization.
+Checkpoint loading follows the inference engine: a raw state dict, `model_state_dict`,
+or `state_dict`, with an 11-class ResNet-18 output in `src.data.constants.CLASSES` order.
+
+Options include `--device cpu`, `--batch-size 32`, `--num-workers 0` (Windows-friendly),
+and `--gradcam-examples 8` (0 disables Grad-CAM). Reports contain:
+
+- `metrics.json`: accuracy, top-3 accuracy, macro-F1, per-class precision/recall/F1,
+  support and one-vs-rest ROC-AUC, confusion matrix, checkpoint SHA-256, and run settings.
+  Undefined AUC (no positive or negative examples) is JSON `null`; undefined
+  precision/recall/F1 is 0. Macro-F1 includes all 11 classes.
+- `predictions.csv`: image paths relative to the data root, labels, predictions, confidence.
+- `predictions.npz`: integer targets and full-precision probabilities, in CSV image order.
+- `confusion_matrix_counts.png`, `confusion_matrix_normalized.png` (row-normalized),
+  and `per_class_metrics.png`, suitable for presentation slides.
+- `gradcam/`: the highest-confidence misclassifications (or correct examples if there are no
+  errors). Each plot shows the model input crop, the Grad-CAM for the predicted class and,
+  for errors, the Grad-CAM for the true class, from the last ResNet block.
+
+Grad-CAM uses PyTorch autograd directly; evaluation needs only the core dependencies.
+The pipeline is tested on synthetic data; final metrics require a trained checkpoint.
+
+---
+
 ## Tech stack
 
 - Python 3.12+

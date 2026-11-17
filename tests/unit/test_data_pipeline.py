@@ -2,12 +2,17 @@ from pathlib import Path
 
 import pytest
 import torch
+import torchvision.transforms.functional as TF
 from PIL import Image
 
 from src.data.constants import CLASSES, NUM_CLASSES
 from src.data.dataloader import create_dataloaders
 from src.data.dataset import Food11Dataset, get_dataset
-from src.data.transforms import get_eval_transforms, get_train_transforms
+from src.data.transforms import (
+    get_eval_geometry_transforms,
+    get_eval_transforms,
+    get_train_transforms,
+)
 
 
 @pytest.fixture
@@ -39,6 +44,17 @@ def test_train_transforms_output_shape(mock_image: Image.Image) -> None:
     transform_128 = get_train_transforms(image_size=128, randaugment=False, random_erasing_p=0.0)
     tensor_128 = transform_128(mock_image)
     assert tensor_128.shape == (3, 128, 128)
+
+
+@pytest.mark.parametrize("image_size", [128, 224])
+def test_eval_geometry_matches_eval_transforms(mock_image: Image.Image, image_size: int) -> None:
+    mean, std = (0.5, 0.5, 0.5), (0.25, 0.25, 0.25)
+    crop = get_eval_geometry_transforms(image_size=image_size)(mock_image)
+    assert crop.size == (image_size, image_size)
+
+    expected = get_eval_transforms(image_size=image_size, mean=mean, std=std)(mock_image)
+    from_crop = TF.normalize(TF.to_tensor(crop), mean=mean, std=std)
+    assert torch.equal(from_crop, expected)
 
 
 def test_eval_transforms_deterministic(mock_image: Image.Image) -> None:
@@ -90,7 +106,6 @@ def test_get_dataset_split_helper(mock_dataset_dir: Path) -> None:
     eval_ds = get_dataset(mock_dataset_dir, split="evaluation")
     assert len(eval_ds) == NUM_CLASSES * 2
 
-    # 'test' alias should map to 'evaluation'
     test_alias_ds = get_dataset(mock_dataset_dir, split="test")
     assert len(test_alias_ds) == NUM_CLASSES * 2
 
@@ -102,7 +117,7 @@ def test_create_dataloaders(mock_dataset_dir: Path) -> None:
         data_dir=mock_dataset_dir,
         batch_size=batch_size,
         image_size=image_size,
-        num_workers=0,  # avoid multiprocessing overhead in quick unit tests
+        num_workers=0,
         pin_memory=False,
     )
 

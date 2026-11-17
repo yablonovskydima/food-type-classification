@@ -42,20 +42,29 @@ def get_train_transforms(
     return transforms.Compose(transform_list)
 
 
-def get_eval_transforms(
+def get_eval_geometry_transforms(
     image_size: int = DEFAULT_IMAGE_SIZE,
-    mean: Sequence[float] = FOOD11_MEAN,
-    std: Sequence[float] = FOOD11_STD,
     crop_scale: float = 256.0 / 224.0,
 ) -> transforms.Compose:
     resize_dim = int(round(image_size * crop_scale))
-
     return transforms.Compose([
         transforms.Resize(
             resize_dim,
             interpolation=transforms.InterpolationMode.BILINEAR,
         ),
         transforms.CenterCrop(image_size),
+    ])
+
+
+def get_eval_transforms(
+    image_size: int = DEFAULT_IMAGE_SIZE,
+    mean: Sequence[float] = FOOD11_MEAN,
+    std: Sequence[float] = FOOD11_STD,
+    crop_scale: float = 256.0 / 224.0,
+) -> transforms.Compose:
+    geometry = get_eval_geometry_transforms(image_size=image_size, crop_scale=crop_scale)
+    return transforms.Compose([
+        *geometry.transforms,
         transforms.ToTensor(),
         transforms.Normalize(mean=mean, std=std),
     ])
