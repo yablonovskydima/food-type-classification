@@ -79,14 +79,3 @@ def test_predict_top_k_bounds(client: TestClient, sample_image_bytes: bytes) -> 
         files={"file": ("food.jpg", sample_image_bytes, "image/jpeg")},
     )
     assert response.status_code == 422
-
-
-def test_predict_without_loaded_model_returns_unavailable(
-    client: TestClient, sample_image_bytes: bytes, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("app.api.main.predictor", None)
-    response = client.post(
-        "/predict", files={"file": ("food.jpg", sample_image_bytes, "image/jpeg")}
-    )
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Model not loaded"

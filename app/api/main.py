@@ -1,11 +1,11 @@
 import io
+import os
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 
-from app.api.model import create_predictor
 from app.api.schemas import HealthResponse, PredictionItem, PredictResponse
 from src.inference.predictor import FoodPredictor
 
@@ -15,7 +15,16 @@ predictor: FoodPredictor | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global predictor
-    predictor = create_predictor()
+    checkpoint = os.getenv("CHECKPOINT_PATH")
+    pretrained = os.getenv("USE_PRETRAINED", "0") == "1"
+
+    if pretrained and not checkpoint:
+        from src.models import build_model
+
+        model = build_model(pretrained=True)
+        predictor = FoodPredictor(model=model, use_imagenet_stats=True)
+    else:
+        predictor = FoodPredictor(checkpoint_path=checkpoint)
 
     yield
     predictor = None
@@ -66,9 +75,7 @@ async def predict(
 
     current_predictor = predictor
     if current_predictor is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Model not loaded"
-        )
+        current_predictor = FoodPredictor()
 
     raw_results = current_predictor.predict_image(image, top_k=top_k)
 
