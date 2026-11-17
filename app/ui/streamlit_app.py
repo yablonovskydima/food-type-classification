@@ -1,5 +1,3 @@
-"""Run with: uv run --extra app python -m streamlit run app/ui/streamlit_app.py."""
-
 import hashlib
 import os
 import pickle
@@ -8,9 +6,12 @@ from pathlib import Path
 import streamlit as st
 
 from src.data.constants import DEFAULT_IMAGE_SIZE
-from src.inference.images import decode_uploaded_image
-from src.inference.nutrition import NUTRITION_REFERENCES
+from src.inference.images import MAX_IMAGE_MEGAPIXELS, MAX_UPLOAD_MB, decode_uploaded_image
 from src.inference.predictor import FoodPredictor
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CHECKPOINT_EXTENSIONS = {".pt", ".pth"}
+IMAGE_SIZES = (128, 224)
 
 
 @st.cache_resource(show_spinner=False, max_entries=2)
@@ -21,7 +22,6 @@ def load_predictor(
     use_imagenet_stats: bool,
     device: str,
 ) -> FoodPredictor:
-    """Invalidate cached weights when a checkpoint changes at the same path."""
     return FoodPredictor(
         checkpoint_path=checkpoint_path,
         image_size=image_size,
@@ -34,49 +34,72 @@ def display_name(category: str) -> str:
     return category.replace("_", " ").title()
 
 
+def find_checkpoints() -> dict[str, Path]:
+    checkpoint_dir = Path(os.getenv("CHECKPOINT_DIR", PROJECT_ROOT / "checkpoints")).expanduser()
+    paths = []
+    if env_checkpoint := os.getenv("CHECKPOINT_PATH"):
+        paths.append(Path(env_checkpoint).expanduser())
+    if checkpoint_dir.is_dir():
+        paths.extend(
+            sorted(p for p in checkpoint_dir.rglob("*") if p.suffix in CHECKPOINT_EXTENSIONS)
+        )
+
+    checkpoints: dict[str, Path] = {}
+    for path in paths:
+        resolved = path.resolve()
+        if not resolved.is_file() or resolved in checkpoints.values():
+            continue
+        try:
+            label = str(resolved.relative_to(PROJECT_ROOT))
+        except ValueError:
+            label = str(resolved)
+        checkpoints[label] = resolved
+    return checkpoints
+
+
+def checkpoint_version(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
 def main() -> None:
     st.set_page_config(page_title="Food Lens · Food-11", page_icon="🍽️", layout="wide")
     st.title("Food Lens")
     st.markdown("### A food photo. Eleven possibilities.")
     st.write("Upload a photo to explore the food categories the model recognises.")
 
+    checkpoints = find_checkpoints()
     with st.sidebar:
         st.header("Food-11 demo")
         st.caption("ResNet-18 · 11 food categories")
-        with st.expander("Model settings", expanded=not bool(os.getenv("CHECKPOINT_PATH"))):
-            checkpoint_text = st.text_input(
+        with st.expander("Model settings", expanded=True):
+            checkpoint_label = st.selectbox(
                 "Trained checkpoint",
-                value=os.getenv("CHECKPOINT_PATH", ""),
-                placeholder="checkpoints/scratch_best.pt",
+                list(checkpoints),
+                placeholder="No checkpoints found",
             )
-            image_size = int(
-                st.number_input(
-                    "Input size (px)",
-                    min_value=32,
-                    max_value=1024,
-                    value=DEFAULT_IMAGE_SIZE,
-                    step=32,
-                )
+            image_size = st.selectbox(
+                "Input size (px)", IMAGE_SIZES, index=IMAGE_SIZES.index(DEFAULT_IMAGE_SIZE)
             )
             normalization = st.selectbox("Normalization", ["Food-11", "ImageNet"])
             device = st.selectbox("Device", ["auto", "cpu", "cuda"])
             st.caption(
-                "Input size and normalization must match the checkpoint's training settings."
+                "Input size and normalization must match the checkpoint's training settings: "
+                "Food-11 for the from-scratch model, ImageNet for the pretrained reference."
             )
         st.divider()
         st.caption("Photos stay in memory on the demo server and are not saved to disk.")
 
-    checkpoint = Path(checkpoint_text).expanduser() if checkpoint_text.strip() else None
-    checkpoint_version = None
-    if checkpoint is not None:
-        try:
-            if checkpoint.is_file():
-                stat = checkpoint.stat()
-                checkpoint_version = (stat.st_mtime_ns, stat.st_size)
-        except OSError:
-            pass
-    if checkpoint_version is None:
-        st.info("Choose a trained checkpoint in Model settings to enable predictions.")
+    checkpoint = checkpoints.get(checkpoint_label) if checkpoint_label else None
+    version = checkpoint_version(checkpoint) if checkpoint is not None else None
+    if version is None:
+        st.info(
+            "No trained checkpoint found. Put a `.pt` file into `checkpoints/` "
+            "or set `CHECKPOINT_PATH` to enable predictions."
+        )
 
     photo_column, result_column = st.columns(2, gap="large")
     with photo_column:
@@ -84,8 +107,8 @@ def main() -> None:
         uploaded = st.file_uploader(
             "Choose a food photo",
             type=["jpg", "jpeg", "png"],
-            max_upload_size=10,
-            help="JPG or PNG, up to 10 MB and 20 megapixels.",
+            max_upload_size=MAX_UPLOAD_MB,
+            help=f"JPG or PNG, up to {MAX_UPLOAD_MB} MB and {MAX_IMAGE_MEGAPIXELS} megapixels.",
         )
         if uploaded is None:
             st.caption("Try a clear photo of one dish with the food filling the frame.")
@@ -108,30 +131,29 @@ def main() -> None:
         )
         result_key = (
             hashlib.sha256(content).hexdigest(),
-            str(checkpoint.resolve()) if checkpoint is not None else "",
-            checkpoint_version,
+            str(checkpoint) if checkpoint is not None else "",
+            version,
             image_size,
             normalization,
             device,
         )
-        if st.button("Identify food", type="primary", disabled=checkpoint_version is None):
-            # Clear prior results before a failed retry so stale predictions cannot appear.
+        if st.button("Identify food", type="primary", disabled=version is None):
             st.session_state.pop("food_prediction", None)
             try:
                 with st.spinner("Looking at your photo…"):
                     predictor = load_predictor(
-                        str(checkpoint.resolve()),
-                        checkpoint_version,
+                        str(checkpoint),
+                        version,
                         image_size,
                         normalization == "ImageNet",
                         device,
                     )
                     predictions = predictor.predict_image(image, top_k=5)
                 st.session_state.food_prediction = {"key": result_key, "predictions": predictions}
-            except (OSError, ValueError, RuntimeError, pickle.UnpicklingError):
+            except (OSError, ValueError, RuntimeError, pickle.UnpicklingError) as error:
                 st.error(
                     "The model could not make a prediction. Check the trained checkpoint, "
-                    "preprocessing settings and selected device."
+                    f"preprocessing settings and selected device.\n\nDetails: {error}"
                 )
                 return
         result = st.session_state.get("food_prediction")
@@ -157,29 +179,6 @@ def main() -> None:
         st.caption(
             "Scores show the model's choices among 11 categories, even for unfamiliar foods."
         )
-
-    st.divider()
-    st.subheader("Inside this category")
-    reference = NUTRITION_REFERENCES[winner["class"]]
-    st.write(f"**Reference example: {reference.example} · per 100 g**")
-    st.caption(
-        "Reference values describe this example food, not the food or portion in your photo."
-    )
-    columns = st.columns(4)
-    for column, label, value in zip(
-        columns,
-        ("Energy", "Protein", "Carbohydrate", "Fat"),
-        (
-            f"{reference.kcal:g} kcal",
-            f"{reference.protein_g:g} g",
-            f"{reference.carbohydrate_g:g} g",
-            f"{reference.fat_g:g} g",
-        ),
-        strict=True,
-    ):
-        column.metric(label, value, border=True)
-    st.write(reference.culinary_note)
-    st.caption(f"Source: [USDA FoodData Central]({reference.source_url}) · SR Legacy")
 
 
 if __name__ == "__main__":

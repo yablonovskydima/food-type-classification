@@ -83,7 +83,8 @@ The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the depende
 - [ ] ResNet-18 trained from scratch
 - [ ] Scratch vs pretrained comparison
 - [ ] Error analysis, confusion matrix, Grad-CAM
-- [x] CLI inference, FastAPI service, Streamlit demo (trained checkpoint required)
+- [x] CLI inference, FastAPI service
+- [ ] Streamlit demo (UI ready; to be checked with a trained checkpoint)
 - [ ] ONNX export and Docker packaging
 
 ---
@@ -97,23 +98,20 @@ uv run --extra app python -m streamlit run app/ui/streamlit_app.py
 ```
 
 Open the local URL shown in the terminal (normally `http://localhost:8501`). In the
-sidebar's **Model settings**, select a local trained Food-11 checkpoint, input size,
-normalization (Food-11 for scratch, ImageNet for the reference), and device. These
-must match training. Alternatively, set the `CHECKPOINT_PATH` environment variable
-before starting. Checkpoints use the existing `FoodPredictor` loading format and
-canonical class order; no checkpoint means predictions stay disabled.
+sidebar's **Model settings**, pick a trained checkpoint, the input size (128 or 224 px),
+normalization (Food-11 for the from-scratch model, ImageNet for the pretrained reference)
+and device. Input size and normalization must match the settings the checkpoint was trained with.
+
+The demo lists every `.pt` / `.pth` file in `checkpoints/`. Set `CHECKPOINT_DIR` to look in
+another folder, or `CHECKPOINT_PATH` to add a specific file and select it by default.
+Without a checkpoint, predictions stay disabled.
 
 Upload a JPG/PNG (up to 10 MB and 20 megapixels), then choose **Identify food**.
-The photo and horizontal confidence chart appear side by side; switch between
+The photo and a horizontal confidence chart appear side by side; switch between
 Top-3 and Top-5 without rerunning inference. Changed photos, weights, or model
-settings invalidate old results. Models are cached, and uploaded photos are kept
-in memory rather than saved to disk. The demo calls local inference directly;
-running the FastAPI server is not required.
-
-The nutrition cards show **one named example food per predicted category**, per
-100 g, with a direct USDA FoodData Central source. These are illustrative SR Legacy
-reference values, verified on 2026-11-17, not class averages or estimates of the
-uploaded meal, its ingredients, or portion size. They work offline after installation.
+settings invalidate old results. If the model cannot be loaded, the error message shows the reason.
+Models are cached, and uploaded photos are kept in memory rather than saved to disk.
+The demo calls local inference directly; running the FastAPI server is not required.
 
 ---
 

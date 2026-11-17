@@ -79,7 +79,8 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
 9. ⬜ Train pretrained reference, compare curves
 10. ⬜ Evaluation on the test split: accuracy, top-3, macro-F1, confusion matrix (`src/evaluation`)
 11. ⬜ Error analysis, Grad-CAM
-12. ✅ CLI inference + FastAPI + Streamlit demo (`src/inference`, `app/api`, `app/ui`, issue #22); demo predictions require a trained checkpoint
+12. ⬜ Inference + API / demo (`src/inference`, `app/api`, `app/ui`): CLI and FastAPI done;
+    Streamlit demo UI ready (issue #22), still to be checked with a trained checkpoint
 
 Tasks are tracked as GitHub issues; reference the issue in the PR.
 
