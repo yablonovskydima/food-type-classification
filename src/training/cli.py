@@ -41,7 +41,9 @@ def main(args: list[str] | None = None) -> int:
     print(
         f"Best validation macro-F1 {summary['best_val_macro_f1']:.4f} at epoch "
         f"{summary['best_epoch']} ({summary['epochs_completed']} epochs"
-        f"{', stopped early' if summary['stopped_early'] else ''})"
+        f"{', stopped early' if summary['stopped_early'] else ''}) "
+        f"in {summary['training_seconds'] / 60:.1f} min on "
+        f"{summary['hardware'].get('gpu', summary['hardware']['device'])}"
     )
     print(f"Best model: {summary['best_checkpoint']}")
     return 0

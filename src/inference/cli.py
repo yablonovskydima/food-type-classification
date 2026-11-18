@@ -4,9 +4,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from src.data.constants import DEFAULT_IMAGE_SIZE
+from src.inference.checkpoints import DEFAULT_CHECKPOINT
 from src.inference.predictor import FoodPredictor
-from src.models import build_model
 
 
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
@@ -20,13 +19,8 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=None,
-        help="Path to model weights checkpoint (.pt file)",
-    )
-    parser.add_argument(
-        "--pretrained",
-        action="store_true",
-        help="Use ImageNet pretrained weights (useful for quick evaluation)",
+        default=DEFAULT_CHECKPOINT,
+        help=f"Trained checkpoint (default: {DEFAULT_CHECKPOINT})",
     )
     parser.add_argument(
         "--top-k",
@@ -40,12 +34,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         default=None,
         choices=["cpu", "cuda"],
         help="Device to run inference on (default: auto-detect)",
-    )
-    parser.add_argument(
-        "--image-size",
-        type=int,
-        default=DEFAULT_IMAGE_SIZE,
-        help=f"Input image resolution (default: {DEFAULT_IMAGE_SIZE})",
     )
     parser.add_argument(
         "--json",
@@ -68,21 +56,12 @@ def format_text_output(filename: str, predictions: list[dict[str, Any]]) -> str:
 
 def main(cli_args: list[str] | None = None) -> int:
     args = parse_args(cli_args)
-
-    if args.pretrained and args.checkpoint is None:
-        model = build_model(pretrained=True)
-        predictor = FoodPredictor(
-            model=model,
-            device=args.device,
-            image_size=args.image_size,
-            use_imagenet_stats=True,
-        )
-    else:
-        predictor = FoodPredictor(
-            checkpoint_path=args.checkpoint,
-            device=args.device,
-            image_size=args.image_size,
-        )
+    try:
+        # Input size and normalisation come from the checkpoint metadata.
+        predictor = FoodPredictor(checkpoint_path=args.checkpoint, device=args.device)
+    except (OSError, ValueError, RuntimeError) as error:
+        print(f"Error: could not load the model: {error}", file=sys.stderr)
+        return 1
 
     if args.image is not None:
         if not args.image.is_file():

@@ -29,6 +29,13 @@ def checkpoint_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return directory
 
 
+def add_checkpoint(checkpoint_dir: Path, experiment: str = "resnet18_scratch") -> Path:
+    path = checkpoint_dir / experiment / "best.pt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"stub checkpoint")
+    return path
+
+
 @pytest.fixture
 def make_app(checkpoint_dir: Path):
     st.cache_resource.clear()
@@ -38,6 +45,9 @@ def make_app(checkpoint_dir: Path):
 
 class PredictorStub:
     calls: list[dict] = []
+    image_size = 224
+    normalization = "food11"
+    metadata = {"epoch": 42, "metrics": {"macro_f1": 0.8123}}
 
     def __init__(self, **kwargs):
         PredictorStub.calls.append(kwargs)
@@ -67,20 +77,23 @@ def predictor_stub(monkeypatch: pytest.MonkeyPatch) -> type[PredictorStub]:
 def test_ui_requires_trained_checkpoint(make_app: AppFactory) -> None:
     app = make_app()
     assert not app.exception
-    assert "No trained checkpoint found" in app.info[0].value
+    assert "No trained model found" in app.info[0].value
     app.file_uploader[0].upload("dish.png", image_bytes(), "image/png").run()
     assert not app.exception
     assert app.button[0].disabled
     assert not app.metric
 
 
-def test_checkpoints_are_discovered(
-    make_app: AppFactory, checkpoint_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_only_best_checkpoints_are_listed(
+    make_app: AppFactory,
+    checkpoint_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    predictor_stub: type[PredictorStub],
 ) -> None:
-    (checkpoint_dir / "scratch_best.pt").write_bytes(b"stub")
-    (checkpoint_dir / "runs" / "pretrained_best.pth").parent.mkdir()
-    (checkpoint_dir / "runs" / "pretrained_best.pth").write_bytes(b"stub")
-    (checkpoint_dir / "notes.txt").write_text("not a checkpoint")
+    add_checkpoint(checkpoint_dir, "resnet18_scratch")
+    add_checkpoint(checkpoint_dir, "resnet18_pretrained")
+    (checkpoint_dir / "resnet18_scratch" / "last.pt").write_bytes(b"training state")
     env_checkpoint = tmp_path / "elsewhere.pt"
     env_checkpoint.write_bytes(b"stub")
     monkeypatch.setenv("CHECKPOINT_PATH", str(env_checkpoint))
@@ -90,15 +103,20 @@ def test_checkpoints_are_discovered(
     options = app.selectbox[0].options
     assert len(options) == 3
     assert options[0].endswith("elsewhere.pt")  # CHECKPOINT_PATH is preselected
-    assert any(option.endswith("scratch_best.pt") for option in options)
-    assert any(option.endswith("pretrained_best.pth") for option in options)
+    assert not any(option.endswith("last.pt") for option in options)
     assert not app.info
 
 
-def test_input_size_is_limited_to_training_sizes(make_app: AppFactory) -> None:
+def test_preprocessing_comes_from_the_checkpoint(
+    make_app: AppFactory, checkpoint_dir: Path, predictor_stub: type[PredictorStub]
+) -> None:
+    add_checkpoint(checkpoint_dir)
     app = make_app()
-    assert app.selectbox[1].options == ["128", "224"]
-    assert app.selectbox[1].value == 224
+    # Only model and device are selectable; size and normalisation are shown, not chosen.
+    assert [box.label for box in app.selectbox] == ["Trained model", "Device"]
+    description = " ".join(caption.value for caption in app.sidebar.caption)
+    assert "224 px" in description and "food11" in description
+    assert "epoch 42" in description and "0.812" in description
 
 
 def test_ui_rejects_invalid_image(make_app: AppFactory) -> None:
@@ -112,8 +130,7 @@ def test_ui_rejects_invalid_image(make_app: AppFactory) -> None:
 def test_prediction_persists_topk_reruns_and_invalidates_on_input_changes(
     make_app: AppFactory, checkpoint_dir: Path, predictor_stub: type[PredictorStub]
 ) -> None:
-    checkpoint = checkpoint_dir / "model.pt"
-    checkpoint.write_bytes(b"stub checkpoint")
+    checkpoint = add_checkpoint(checkpoint_dir)
     app = make_app()
     app.file_uploader[0].upload("dish.png", image_bytes(), "image/png").run()
     app.button[0].click().run()
@@ -128,16 +145,15 @@ def test_prediction_persists_topk_reruns_and_invalidates_on_input_changes(
     assert len(predictor_stub.calls) == 1
 
     app.file_uploader[0].upload("other.png", image_bytes(color="green"), "image/png").run()
-    assert not app.metric
+    assert not app.metric  # A new photo must never show stale predictions.
     app.button[0].click().run()
     assert app.metric[0].value == "Rice"
-    assert len(predictor_stub.calls) == 1
+    assert len(predictor_stub.calls) == 1  # The model is cached, not reloaded per photo.
 
-    checkpoint.write_bytes(b"new stub checkpoint")
+    checkpoint.write_bytes(b"retrained checkpoint")
     app.run()
     assert not app.metric
-    app.button[0].click().run()
-    assert len(predictor_stub.calls) == 2
+    assert len(predictor_stub.calls) == 2  # A retrained best.pt is loaded again.
 
 
 def test_ui_shows_checkpoint_load_failure_reason(
@@ -147,11 +163,11 @@ def test_ui_shows_checkpoint_load_failure_reason(
         raise RuntimeError("incompatible state dict")
 
     monkeypatch.setattr("src.inference.predictor.FoodPredictor", broken_predictor)
-    (checkpoint_dir / "broken.pt").write_bytes(b"stub")
+    add_checkpoint(checkpoint_dir)
     app = make_app()
-    app.file_uploader[0].upload("dish.png", image_bytes(), "image/png").run()
-    app.button[0].click().run()
     assert not app.exception
-    assert "could not make a prediction" in app.error[0].value
+    assert "could not be loaded" in app.error[0].value
     assert "incompatible state dict" in app.error[0].value
+    app.file_uploader[0].upload("dish.png", image_bytes(), "image/png").run()
+    assert app.button[0].disabled
     assert not app.metric

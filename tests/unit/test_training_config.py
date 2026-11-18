@@ -30,6 +30,19 @@ def test_scratch_config_matches_project_decisions() -> None:
     assert config.imbalance == "weighted_loss"
     assert config.label_smoothing == 0.1
     assert config.weight_decay == 5e-4
+    # OneCycle gains most in its final low-LR epochs, so the scratch run never stops early.
+    assert config.scheduler == "onecycle"
+    assert config.early_stopping_patience is None
+
+
+def test_early_stopping_can_be_disabled() -> None:
+    disabled = TrainConfig(experiment="t", early_stopping_patience=None)
+    assert not disabled.should_stop_early(1000)
+    enabled = TrainConfig(experiment="t", early_stopping_patience=3)
+    assert not enabled.should_stop_early(2)
+    assert enabled.should_stop_early(3)
+    with pytest.raises(ValueError, match="null to disable"):
+        TrainConfig(experiment="t", early_stopping_patience=0)
 
 
 def test_overrides_and_none_values(tmp_path: Path) -> None:

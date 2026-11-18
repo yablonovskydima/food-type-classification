@@ -1,5 +1,6 @@
 import json
 import math
+import platform
 import random
 import time
 from typing import Any
@@ -78,6 +79,7 @@ def train_one_epoch(
     device: torch.device,
     *,
     amp: bool,
+    amp_dtype: torch.dtype = torch.float16,
     grad_clip_norm: float | None = None,
     limit_batches: int | None = None,
     writer: SummaryWriter | None = None,
@@ -91,7 +93,7 @@ def train_one_epoch(
         images = images.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
         optimizer.zero_grad(set_to_none=True)
-        with torch.autocast(device_type=device.type, enabled=amp):
+        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp):
             logits = model(images)
             loss = criterion(logits, targets)
         if not torch.isfinite(loss):
@@ -100,9 +102,13 @@ def train_one_epoch(
         if grad_clip_norm is not None:
             scaler.unscale_(optimizer)
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+        scale_before = scaler.get_scale()
         scaler.step(optimizer)
         scaler.update()
-        scheduler.step()
+        # With AMP the scaler skips steps whose gradients overflowed (and lowers the scale);
+        # advance the LR schedule only when the optimizer actually stepped.
+        if scaler.get_scale() >= scale_before:
+            scheduler.step()
 
         global_step += 1
         loss_sum += loss.item() * len(targets)
@@ -123,18 +129,18 @@ def evaluate(
     loader: DataLoader,
     device: torch.device,
     *,
-    amp: bool,
     limit_batches: int | None = None,
 ) -> dict[str, float]:
+    # Full float32: validation is cheap, and half-precision logits can overflow to inf/NaN
+    # early in training, which would corrupt the validation loss.
     model.eval()
     criterion = nn.CrossEntropyLoss(reduction="sum")
     loss_sum, labels, preds = 0.0, [], []
     for images, targets in tqdm(_limited(loader, limit_batches), desc="Validation", leave=False):
         images = images.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
-        with torch.autocast(device_type=device.type, enabled=amp):
-            logits = model(images)
-        loss_sum += criterion(logits.float(), targets).item()
+        logits = model(images)
+        loss_sum += criterion(logits, targets).item()
         labels.append(targets.cpu().numpy())
         preds.append(logits.argmax(dim=1).cpu().numpy())
     if not labels:
@@ -159,6 +165,13 @@ def fit(
     seed_everything(config.seed)
     torch_device = resolve_device(device)
     amp = config.amp and torch_device.type == "cuda"
+    # bfloat16 has the float32 range, so activations cannot overflow and no loss scaling is
+    # needed; GPUs without bf16 support fall back to float16 with a GradScaler.
+    amp_dtype = (
+        torch.bfloat16
+        if amp and torch.cuda.is_bf16_supported(including_emulation=False)
+        else torch.float16
+    )
 
     loaders = create_dataloaders(
         data_dir=config.data_dir,
@@ -185,7 +198,7 @@ def fit(
     ).to(torch_device)
     optimizer = build_optimizer(model, config)
     scheduler = build_scheduler(optimizer, config, steps_per_epoch)
-    scaler = torch.amp.GradScaler(torch_device.type, enabled=amp)
+    scaler = torch.amp.GradScaler(torch_device.type, enabled=amp and amp_dtype == torch.float16)
 
     start_epoch, best_score, epochs_without_improvement = 1, -math.inf, 0
     best_epoch, history = 0, []
@@ -210,7 +223,7 @@ def fit(
     writer.add_text("config", f"```\n{json.dumps(config.to_dict(), indent=2)}\n```", start_epoch)
     try:
         for epoch in range(start_epoch, config.epochs + 1):
-            if epochs_without_improvement >= config.early_stopping_patience:
+            if config.should_stop_early(epochs_without_improvement):
                 # Only reachable when resuming a run that had already stopped early.
                 stopped_early = True
                 break
@@ -224,15 +237,14 @@ def fit(
                 scaler,
                 torch_device,
                 amp=amp,
+                amp_dtype=amp_dtype,
                 grad_clip_norm=config.grad_clip_norm,
                 limit_batches=limit_batches,
                 writer=writer,
                 global_step=global_step,
                 epoch=epoch,
             )
-            val_metrics = evaluate(
-                model, val_loader, torch_device, amp=amp, limit_batches=limit_batches
-            )
+            val_metrics = evaluate(model, val_loader, torch_device, limit_batches=limit_batches)
             for name, value in train_metrics.items():
                 writer.add_scalar(f"{name}/train", value, epoch)
             for name, value in val_metrics.items():
@@ -280,7 +292,7 @@ def fit(
                 f"val loss {val_metrics['loss']:.4f} acc {val_metrics['accuracy']:.3f} "
                 f"macro-F1 {val_metrics['macro_f1']:.3f}{' *' if improved else ''}"
             )
-            if epochs_without_improvement >= config.early_stopping_patience:
+            if config.should_stop_early(epochs_without_improvement):
                 print(
                     f"Early stopping: no validation macro-F1 improvement for "
                     f"{epochs_without_improvement} epochs (best epoch {best_epoch})"
@@ -290,10 +302,37 @@ def fit(
     finally:
         writer.close()
 
-    return {
+    best_row = next((row for row in history if row["epoch"] == best_epoch), {})
+    summary = {
+        "experiment": config.experiment,
         "best_epoch": best_epoch,
         "best_val_macro_f1": best_score,
+        "best_val_metrics": {
+            key.removeprefix("val_"): value
+            for key, value in best_row.items()
+            if key.startswith("val_")
+        },
         "epochs_completed": len(history),
         "stopped_early": stopped_early,
+        # Sum of per-epoch times, so it stays correct across resumed runs.
+        "training_seconds": round(sum(row["seconds"] for row in history), 1),
+        "hardware": hardware_info(torch_device),
+        "precision": str(amp_dtype).removeprefix("torch.") if amp else "float32",
         "best_checkpoint": str(run_dir / BEST_CHECKPOINT),
     }
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
+
+
+def hardware_info(device: torch.device) -> dict[str, Any]:
+    info: dict[str, Any] = {
+        "device": str(device),
+        "cpu": platform.processor() or platform.machine(),
+        "torch": torch.__version__,
+    }
+    if device.type == "cuda":
+        properties = torch.cuda.get_device_properties(device)
+        info["gpu"] = properties.name
+        info["gpu_memory_gb"] = round(properties.total_memory / 1024**3, 1)
+        info["cuda"] = torch.version.cuda
+    return info

@@ -17,7 +17,6 @@ CLASSES: Final[tuple[str, ...]] = (
 NUM_CLASSES: Final[int] = len(CLASSES)
 
 CLASS_TO_IDX: Final[dict[str, int]] = {cls_name: idx for idx, cls_name in enumerate(CLASSES)}
-IDX_TO_CLASS: Final[dict[int, str]] = {idx: cls_name for idx, cls_name in enumerate(CLASSES)}
 
 FOOD11_MEAN: Final[tuple[float, float, float]] = (0.5503, 0.4493, 0.3437)
 FOOD11_STD: Final[tuple[float, float, float]] = (0.2714, 0.2738, 0.2806)
