@@ -120,6 +120,9 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
     with the first trained checkpoint; Streamlit demo (issue #22) still to be tried by hand
 13. ✅ ONNX export, parity checks, CPU benchmarks and PyTorch-free inference (issue #12,
     `src/inference/onnx_*`); final-model export awaits a trained checkpoint
+14. ✅ Docker CPU images for API and Streamlit, Compose, healthchecks and real-container
+    smoke tests (issue #14); the trained `best.pt` is mounted read-only at runtime;
+    still to be run with the final trained checkpoint
 
 Tasks are tracked as GitHub issues; reference the issue in the PR.
 
@@ -131,6 +134,8 @@ configs/             experiment configs (YAML)
 app/api/             inference API (FastAPI) — depends on src, never the other way round
 app/ui/              Streamlit demo using the local inference engine (issue #22)
 notebooks/           EDA (one committed notebook with outputs; reusable code goes to src/)
+docker/              container healthcheck + smoke test (Dockerfile, compose.yaml at the root;
+                     images install CPU torch at the uv.lock versions, see the Dockerfile)
 scripts/             one-command utilities: download_data.py, prepare_data.py, compute_stats.py,
                      train.py
 src/

@@ -1,0 +1,32 @@
+name: Application containers
+
+on:
+  push:
+    branches: [main, dev]
+    paths: &image-inputs
+      - Dockerfile
+      - .dockerignore
+      - compose.yaml
+      - pyproject.toml
+      - uv.lock
+      - src/**
+      - app/**
+      - docker/**
+      - .github/workflows/docker.yml
+  pull_request:
+    branches: [main, dev]
+    paths: *image-inputs
+
+jobs:
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose file
+        run: MODEL_CHECKPOINT=./README.md docker compose config --quiet
+      - name: Build API image
+        run: docker build --target api -t food-classifier-api:local .
+      - name: Build demo image
+        run: docker build --target demo -t food-classifier-demo:local .
+      - name: Exercise both containers with synthetic weights
+        run: python docker/smoke_test.py

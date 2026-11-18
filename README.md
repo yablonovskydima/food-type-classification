@@ -27,7 +27,8 @@ checkpoints/<experiment>/best.pt                   + TensorBoard logs in runs/
   ├─ uv run python -m src.inference.cli ...     5. predict photos from the command line
   ├─ uv run uvicorn app.api.main:app            6. REST API
   ├─ uv run streamlit run app/ui/streamlit_app.py   7. web demo
-  └─ uv run python -m src.inference.onnx_export_cli ... 8. ONNX export for CPU deployment
+  ├─ uv run python -m src.inference.onnx_export_cli ... 8. ONNX export for CPU deployment
+  └─ docker compose --env-file .docker.env up   9. API + demo in containers
 ```
 
 `best.pt` stores the input size and normalisation it was trained with, so every step after
@@ -211,6 +212,27 @@ The export embeds class names and preprocessing in `model.onnx`, verifies that O
 PyTorch outputs match, and writes CPU timings to `export_report.json`. The ONNX predictor
 needs only `onnxruntime`, `numpy` and `pillow` — no PyTorch.
 
+### 9. Run the API and demo in Docker (optional)
+
+Runs steps 6 and 7 on any machine with Docker Desktop (or Docker Engine with Compose), without
+Python on the host. Copy the settings file and point `MODEL_CHECKPOINT` at a trained `best.pt`
+(default: `./checkpoints/resnet18_scratch/best.pt`):
+
+```bash
+cp .docker.env.example .docker.env
+docker compose --env-file .docker.env up --build -d --wait
+```
+
+The demo opens at http://localhost:8501 and the API docs at http://localhost:8000/docs.
+Both containers mount the checkpoint read-only as `/models/best.pt` and read its input size and
+normalisation from the file. Stop them with `docker compose --env-file .docker.env down`;
+append `api` or `demo` to `up` to start only one.
+
+The images run on CPU as a non-root user, with CPU-only PyTorch wheels pinned to the versions in
+`uv.lock`; data, weights and credentials are never copied into them. If the checkpoint is
+missing, the API stays up but reports it in `/health` and answers `/predict` with 503, so its
+container is unhealthy and `up --wait` fails.
+
 ---
 
 ## Results
@@ -242,6 +264,7 @@ app/
   api/               FastAPI service
   ui/                Streamlit demo
 notebooks/           exploratory data analysis
+docker/              container healthcheck and smoke test (with Dockerfile, compose.yaml)
 tests/unit, tests/integration
 data/ checkpoints/ runs/ reports/    generated, git-ignored
 ```
@@ -258,7 +281,15 @@ uv run ruff check .
 ```
 
 Tests run on synthetic data, so they need neither the dataset nor a GPU. CI runs both on every
-pull request. Branching, conventions and project decisions are described in
+pull request. Changes to the images (Dockerfile, `src/`, `app/`, dependencies) are also checked
+by building both images and running `python docker/smoke_test.py`, which starts real containers
+with random weights; run the same locally with Docker Desktop running:
+
+```bash
+docker build --target api -t food-classifier-api:local .
+docker build --target demo -t food-classifier-demo:local .
+python docker/smoke_test.py
+``` Branching, conventions and project decisions are described in
 [AGENTS.md](AGENTS.md).
 
 ---
