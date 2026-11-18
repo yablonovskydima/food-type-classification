@@ -14,53 +14,81 @@ from src.models import build_model
 @pytest.fixture
 def mock_image(tmp_path: Path) -> Path:
     img_path = tmp_path / "sample_food.jpg"
-    img = Image.new("RGB", (100, 100), color=(200, 100, 50))
-    img.save(img_path)
+    Image.new("RGB", (100, 100), color=(200, 100, 50)).save(img_path)
     return img_path
 
 
 @pytest.fixture
 def mock_checkpoint(tmp_path: Path) -> Path:
-    model = build_model(num_classes=NUM_CLASSES, pretrained=False)
     ckpt_path = tmp_path / "model_weights.pt"
-    torch.save({"model_state_dict": model.state_dict()}, ckpt_path)
+    torch.save({"model_state_dict": build_model(num_classes=NUM_CLASSES).state_dict()}, ckpt_path)
     return ckpt_path
+
+
+@pytest.fixture
+def tagged_checkpoint(tmp_path: Path) -> Path:
+    # Same layout as best.pt written by the training loop.
+    path = tmp_path / "best.pt"
+    torch.save(
+        {
+            "model_state_dict": build_model().state_dict(),
+            "metadata": {"image_size": 128, "normalization": "imagenet", "epoch": 7},
+        },
+        path,
+    )
+    return path
 
 
 def test_predictor_initialization_with_checkpoint(mock_checkpoint: Path) -> None:
     predictor = FoodPredictor(checkpoint_path=mock_checkpoint, device="cpu")
     assert predictor.device.type == "cpu"
     assert len(predictor.classes) == NUM_CLASSES
+    # Untagged checkpoints fall back to the defaults.
+    assert (predictor.image_size, predictor.normalization) == (224, "food11")
 
 
-def test_predict_image_output_structure(mock_image: Path) -> None:
-    predictor = FoodPredictor(device="cpu")
+def test_predictor_uses_checkpoint_preprocessing(tagged_checkpoint: Path) -> None:
+    predictor = FoodPredictor(checkpoint_path=tagged_checkpoint, device="cpu")
+    assert (predictor.image_size, predictor.normalization) == (128, "imagenet")
+    assert predictor.metadata["epoch"] == 7
+    assert predictor.transform(Image.new("RGB", (300, 200))).shape == (3, 128, 128)
+
+
+def test_predictor_rejects_conflicting_preprocessing(tagged_checkpoint: Path) -> None:
+    with pytest.raises(ValueError, match="conflicts"):
+        FoodPredictor(checkpoint_path=tagged_checkpoint, device="cpu", image_size=224)
+    with pytest.raises(ValueError, match="conflicts"):
+        FoodPredictor(checkpoint_path=tagged_checkpoint, device="cpu", use_imagenet_stats=False)
+
+
+def test_predictor_requires_a_model_source() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        FoodPredictor(device="cpu")
+
+
+def test_predict_image_output_structure(mock_checkpoint: Path, mock_image: Path) -> None:
+    predictor = FoodPredictor(checkpoint_path=mock_checkpoint, device="cpu")
     preds = predictor.predict_image(mock_image, top_k=3)
 
     assert len(preds) == 3
     for pred in preds:
-        assert "class" in pred
-        assert "probability" in pred
-        assert "index" in pred
         assert pred["class"] in CLASSES
         assert 0.0 <= pred["probability"] <= 1.0
         assert 0 <= pred["index"] < NUM_CLASSES
-
     probs = [p["probability"] for p in preds]
     assert probs == sorted(probs, reverse=True)
 
 
-def test_predict_directory(tmp_path: Path) -> None:
+def test_predict_directory(mock_checkpoint: Path, tmp_path: Path) -> None:
+    images = tmp_path / "images"
+    images.mkdir()
     for i in range(2):
-        img = Image.new("RGB", (64, 64), color=(i * 20, 50, 100))
-        img.save(tmp_path / f"test_{i}.jpg")
+        Image.new("RGB", (64, 64), color=(i * 20, 50, 100)).save(images / f"test_{i}.jpg")
 
-    predictor = FoodPredictor(device="cpu")
-    dir_results = predictor.predict_directory(tmp_path, top_k=2)
+    predictor = FoodPredictor(checkpoint_path=mock_checkpoint, device="cpu")
+    dir_results = predictor.predict_directory(images, top_k=2)
 
-    assert len(dir_results) == 2
-    assert "test_0.jpg" in dir_results
-    assert "test_1.jpg" in dir_results
+    assert set(dir_results) == {"test_0.jpg", "test_1.jpg"}
     assert len(dir_results["test_0.jpg"]) == 2
 
 
@@ -69,6 +97,7 @@ def test_cli_argument_parsing() -> None:
     assert args.image == Path("dish.jpg")
     assert args.top_k == 5
     assert args.json_output is True
+    assert args.checkpoint == Path("checkpoints") / "resnet18_scratch" / "best.pt"
 
 
 def test_format_text_output() -> None:
@@ -82,17 +111,26 @@ def test_format_text_output() -> None:
     assert "Rice" in formatted
 
 
-def test_cli_execution_with_image(mock_image: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    exit_code = main(["--image", str(mock_image), "--top-k", "2", "--device", "cpu"])
-    assert exit_code == 0
-    captured = capsys.readouterr()
-    assert "sample_food.jpg" in captured.out
+def test_cli_execution_with_image(
+    mock_checkpoint: Path, mock_image: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = ["--image", str(mock_image), "--checkpoint", str(mock_checkpoint), "--device", "cpu"]
+    assert main([*args, "--top-k", "2"]) == 0
+    assert "sample_food.jpg" in capsys.readouterr().out
 
 
-def test_cli_execution_with_json(mock_image: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    exit_code = main(["--image", str(mock_image), "--top-k", "2", "--device", "cpu", "--json"])
-    assert exit_code == 0
-    captured = capsys.readouterr()
-    parsed = json.loads(captured.out)
-    assert "sample_food.jpg" in parsed
+def test_cli_execution_with_json(
+    mock_checkpoint: Path, mock_image: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = ["--image", str(mock_image), "--checkpoint", str(mock_checkpoint), "--device", "cpu"]
+    assert main([*args, "--top-k", "2", "--json"]) == 0
+    parsed = json.loads(capsys.readouterr().out)
     assert len(parsed["sample_food.jpg"]) == 2
+
+
+def test_cli_reports_missing_checkpoint(
+    mock_image: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = ["--image", str(mock_image), "--checkpoint", str(tmp_path / "missing.pt")]
+    assert main(args) == 1
+    assert "could not load the model" in capsys.readouterr().err

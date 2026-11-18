@@ -50,7 +50,8 @@ def create_dataloaders(
 
     train_dataset = get_dataset(data_dir=data_dir, split="training", transform=train_transform)
     val_dataset = get_dataset(data_dir=data_dir, split="validation", transform=eval_transform)
-    test_dataset = get_dataset(data_dir=data_dir, split="evaluation", transform=eval_transform)
+    # The test split ("evaluation") is deliberately not loaded here: training must never see
+    # it. Final test evaluation goes through src.evaluation.
 
     sampler = (
         weighted_sampler(train_dataset.targets, seed=seed)
@@ -67,6 +68,9 @@ def create_dataloaders(
             num_workers=num_workers,
             pin_memory=pin_memory,
             drop_last=drop_last_train,
+            # Keep workers alive between epochs: on Windows each restart re-imports PyTorch
+            # in every worker, which costs tens of seconds per epoch.
+            persistent_workers=num_workers > 0,
         ),
         "validation": DataLoader(
             val_dataset,
@@ -75,14 +79,7 @@ def create_dataloaders(
             num_workers=num_workers,
             pin_memory=pin_memory,
             drop_last=False,
-        ),
-        "evaluation": DataLoader(
-            test_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            drop_last=False,
+            persistent_workers=num_workers > 0,
         ),
     }
 

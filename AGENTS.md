@@ -62,19 +62,41 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
   `uv run scripts/compute_stats.py` after rebuilding `data/processed`). The pretrained
   reference model uses ImageNet statistics instead.
 - SGD (momentum 0.9) or AdamW, OneCycle / cosine LR schedule, 60–100 epochs for the scratch model.
-- Label smoothing 0.1, weight decay 5e-4, mixed precision (AMP), early stopping on validation macro-F1.
+- Label smoothing 0.1, weight decay 5e-4, mixed precision (AMP). Early stopping on validation
+  macro-F1 is optional (`early_stopping_patience`, `null` disables it): off for the OneCycle
+  scratch run, which must reach its final low-LR epochs; on for the cosine pretrained run.
+  `best.pt` always keeps the best epoch either way.
 - Class imbalance: `imbalance` option of `create_dataloaders` / `build_criterion`
   (`src/data/class_balance.py`, `src/training/losses.py`). Default `weighted_loss`
   (inverse-frequency class weights from the training split); `weighted_sampler` balances batches
   instead. Never use both at once — pass the same strategy to both functions.
 - Experiment settings live in YAML configs (`configs/*.yaml`, loaded into `TrainConfig` in
   `src/training/config.py`; unknown keys are rejected), not in code. Fix all random seeds.
-- Train with `uv run python -m src.training.cli --config configs/<experiment>.yaml`.
+- Train with `uv run scripts/train.py [--config configs/<experiment>.yaml] [--resume]`: checks
+  data and GPU, trains via `src.training.cli`'s `fit()`, then evaluates `best.pt` on the
+  validation split into `reports/<experiment>/validation/` (never the test split).
+  Mixed precision uses bfloat16 when the GPU supports it (float16 + GradScaler otherwise);
+  validation runs in float32. DataLoader workers are persistent (Windows restarts are slow).
   Validation runs after every epoch; `checkpoints/<experiment>/best.pt` (weights + metadata:
   image size, normalisation, epoch, val metrics) is the model for evaluation/inference,
   `last.pt` is the full state for `--resume`, `history.json` holds per-epoch metrics.
   Resuming requires the same config; an existing run is never overwritten.
+  `summary.json` records best epoch/metrics, total training time, precision and hardware.
+- On Windows `uv` installs the CUDA 13.2 build of PyTorch (`[tool.uv.sources]` in
+  `pyproject.toml`); Linux/macOS use the PyPI wheels.
 - Logging to TensorBoard (`runs/<experiment>`), checkpoints to `checkpoints/` — both git-ignored.
+
+## Using trained models
+
+- All checkpoint loading goes through `src/inference/checkpoints.py` (`load_checkpoint`,
+  `resolve_preprocessing`). Input size and normalisation are read from the checkpoint metadata,
+  so evaluation, the inference CLI, the API, the demo and ONNX export never need them as
+  arguments; explicit values are only for checkpoints without metadata and must not conflict.
+- The default model is `checkpoints/resnet18_scratch/best.pt` (`DEFAULT_CHECKPOINT`). The CLI
+  and API require a trained checkpoint and never fall back to random or ImageNet-only weights
+  (an ImageNet backbone with an untrained 11-class head gives meaningless predictions).
+- Uploaded photos (API, demo) are decoded with `src/inference/images.py`
+  (`decode_uploaded_image`: format/size checks, EXIF orientation).
 
 ## Plan and status
 
@@ -86,16 +108,21 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
    comparing weighted loss vs sampler by per-class recall needs the training loop
 6. ✅ Model factory: ResNet-18 scratch / pretrained (`src/models`)
 7. ✅ Training loop with configs, AMP, checkpoints, TensorBoard (`src/training`, issue #7)
-8. ⬜ Train ResNet-18 from scratch — **main experiment**
+8. ⬜ Train ResNet-18 from scratch — **main experiment** (pipeline: `scripts/train.py`, issue #8).
+   First run (RTX 3050, 17 min): val macro-F1 0.720 / accuracy 0.710 at epoch 29, but early
+   stopping ended it at epoch 44 of 80 while the OneCycle LR was still ~0.07, before the
+   annealing phase. Early stopping is now disabled for the scratch config; a full 80-epoch
+   rerun (~32 min) is pending, then fill the README results
 9. ⬜ Train pretrained reference, compare curves
 10. ⬜ Evaluation on the test split: accuracy, top-3, macro-F1, confusion matrix (`src/evaluation`)
 11. ⬜ Error analysis, Grad-CAM
-12. ⬜ Inference + API / demo (`src/inference`, `app/api`, `app/ui`): CLI and FastAPI done;
-    Streamlit demo UI ready (issue #22), still to be checked with a trained checkpoint
+12. ⬜ Inference + API / demo (`src/inference`, `app/api`, `app/ui`): CLI and FastAPI checked
+    with the first trained checkpoint; Streamlit demo (issue #22) still to be tried by hand
 13. ✅ ONNX export, parity checks, CPU benchmarks and PyTorch-free inference (issue #12,
     `src/inference/onnx_*`); final-model export awaits a trained checkpoint
 14. ✅ Docker CPU images for API and Streamlit, Compose, healthchecks and real-container
-    smoke tests (issue #14); trained weights are mounted read-only at runtime
+    smoke tests (issue #14); the trained `best.pt` is mounted read-only at runtime;
+    still to be run with the final trained checkpoint
 
 Tasks are tracked as GitHub issues; reference the issue in the PR.
 
@@ -103,17 +130,22 @@ Tasks are tracked as GitHub issues; reference the issue in the PR.
 
 ```
 .github/workflows/   CI
+configs/             experiment configs (YAML)
 app/api/             inference API (FastAPI) — depends on src, never the other way round
 app/ui/              Streamlit demo using the local inference engine (issue #22)
-scripts/             one-command utilities: download_data.py, prepare_data.py, compute_stats.py
+notebooks/           EDA (one committed notebook with outputs; reusable code goes to src/)
+docker/              container healthcheck + smoke test (Dockerfile, compose.yaml at the root;
+                     images install CPU torch at the uv.lock versions, see the Dockerfile)
+scripts/             one-command utilities: download_data.py, prepare_data.py, compute_stats.py,
+                     train.py
 src/
-  data/              datasets, transforms, samplers
+  data/              datasets, transforms, dataloaders (training + validation only), class balance
   models/            model factory
   training/          training loop, losses, optimizers, schedulers, checkpoints
-  evaluation/        metrics, reports, confusion matrix
-  inference/         prediction code shared by CLI / API / demo
+  evaluation/        metrics, reports, confusion matrix, Grad-CAM
+  inference/         checkpoint loading, predictor + CLI, upload decoding, ONNX export/runtime
 tests/unit, tests/integration
-data/raw, data/processed   git-ignored
+data/ checkpoints/ runs/ reports/   generated, git-ignored
 ```
 
 Rule of thumb: ML logic goes into `src/`; `app/` and `scripts/` only call it.

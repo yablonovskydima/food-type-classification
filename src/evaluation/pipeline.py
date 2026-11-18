@@ -9,7 +9,6 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 
-from src.data.constants import DEFAULT_IMAGE_SIZE
 from src.data.dataset import get_dataset
 from src.data.transforms import get_eval_geometry_transforms
 from src.evaluation.gradcam import grad_cam
@@ -24,8 +23,8 @@ def evaluate_checkpoint(
     output_dir: str | Path,
     *,
     split: str = "validation",
-    image_size: int = DEFAULT_IMAGE_SIZE,
-    use_imagenet_stats: bool = False,
+    image_size: int | None = None,
+    use_imagenet_stats: bool | None = None,
     batch_size: int = 32,
     num_workers: int = 0,
     device: str | None = None,
@@ -33,8 +32,8 @@ def evaluate_checkpoint(
 ) -> dict[str, Any]:
     if split not in {"validation", "evaluation"}:
         raise ValueError("Split must be validation or evaluation")
-    if image_size <= 0 or batch_size <= 0 or num_workers < 0 or gradcam_examples < 0:
-        raise ValueError("Invalid image size, batch size, worker count, or Grad-CAM count")
+    if batch_size <= 0 or num_workers < 0 or gradcam_examples < 0:
+        raise ValueError("Invalid batch size, worker count, or Grad-CAM count")
     checkpoint = Path(checkpoint)
     output_dir = Path(output_dir)
     if output_dir.exists() and (not output_dir.is_dir() or any(output_dir.iterdir())):
@@ -69,8 +68,8 @@ def evaluate_checkpoint(
         "checkpoint_sha256": checkpoint_hash,
         "data_dir": str(Path(data_dir).resolve()),
         "split": split,
-        "image_size": image_size,
-        "normalization": "imagenet" if use_imagenet_stats else "food11",
+        "image_size": predictor.image_size,
+        "normalization": predictor.normalization,
         "device": str(predictor.device),
         "torch_version": str(torch.__version__),
         "gradcam_examples_requested": gradcam_examples,
@@ -103,7 +102,7 @@ def evaluate_checkpoint(
     if len(selected):
         cam_dir = output_dir / "gradcam"
         cam_dir.mkdir()
-        geometry = get_eval_geometry_transforms(image_size=image_size)
+        geometry = get_eval_geometry_transforms(image_size=predictor.image_size)
         target_layer = predictor.model.layer4[-1]
         for index in selected:
             path, label = dataset.samples[index]

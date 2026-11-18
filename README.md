@@ -1,303 +1,296 @@
-# Food Classifier - Food Type Classification with ResNet-18
+# Food Classifier — Food Type Classification with ResNet-18
 
 This project classifies a food photo into one of **11 food categories**.
-The model is **ResNet-18 trained from scratch**: the architecture comes from `torchvision`,
+The main model is **ResNet-18 trained from scratch**: the architecture comes from `torchvision`,
 but the weights start random and are learned entirely on the
 [Food-11](https://www.kaggle.com/datasets/trolukovich/food11-image-dataset) dataset.
+The same architecture initialised from ImageNet weights is trained as a reference, to show what
+pretraining adds.
+
+---
+
+## Workflow at a glance
+
+```
+Kaggle
+  │  uv run scripts/download_data.py            1. download + verify
+  ▼
+data/raw/food11/          16,643 images, with duplicates across splits
+  │  uv run scripts/prepare_data.py             2. dedup, resize, rename classes
+  ▼
+data/processed/food11/    9,856 train / 3,374 validation / 2,783 test
+  │  uv run scripts/train.py                    3. train + evaluate on validation
+  ▼
+checkpoints/<experiment>/best.pt                   + TensorBoard logs in runs/
+  │                                                + validation reports in reports/
+  ├─ uv run python -m src.evaluation.cli ...    4. final test-split evaluation (once)
+  ├─ uv run python -m src.inference.cli ...     5. predict photos from the command line
+  ├─ uv run uvicorn app.api.main:app            6. REST API
+  ├─ uv run streamlit run app/ui/streamlit_app.py   7. web demo
+  ├─ uv run python -m src.inference.onnx_export_cli ... 8. ONNX export for CPU deployment
+  └─ docker compose --env-file .docker.env up   9. API + demo in containers
+```
+
+`best.pt` stores the input size and normalisation it was trained with, so every step after
+training (evaluation, CLI, API, demo, ONNX export) picks the right preprocessing automatically.
 
 ---
 
 ## Dataset
 
-**Food-11** (MMSPG, EPFL) - 16,643 images, 11 classes, pre-split into three parts:
+**Food-11** (MMSPG, EPFL) — 16,643 images, 11 classes, pre-split into three parts:
 
-| Split        | Images | Used for |
-|--------------|--------|----------|
-| `training`   | 9,866  | training |
-| `validation` | 3,430  | model selection, early stopping |
-| `evaluation` | 3,347  | final test (used once) |
+| Split        | Raw images | After dedup | Used for |
+|--------------|------------|-------------|----------|
+| `training`   | 9,866      | 9,856       | training |
+| `validation` | 3,430      | 3,374       | model selection, early stopping, comparing experiments |
+| `evaluation` | 3,347      | 2,783       | final test, used once per final model |
 
-**Classes:** Bread, Dairy product, Dessert, Egg, Fried food, Meat, Noodles/Pasta, Rice, Seafood, Soup, Vegetable/Fruit.
+**Classes:** Bread, Dairy product, Dessert, Egg, Fried food, Meat, Noodles/Pasta, Rice, Seafood,
+Soup, Vegetable/Fruit.
 
 **Things to keep in mind:**
-- **Class imbalance** - the training split ranges from ~280 (Rice) to ~1,500 (Dessert, Soup) images.
-  Handled with class-weighted loss or `WeightedRandomSampler`; **macro-F1** is reported next to accuracy.
-- **Variable image sizes** - resized and cropped to a fixed input size (128 or 224 px).
-- **Overlapping categories** (Fried food vs Meat, Dessert vs Dairy product) - expected confusions, analysed with a confusion matrix.
+- **Duplicates** — ~630 images appear more than once, mostly across splits (564 test images also
+  appear in training or validation). They are removed during preparation, otherwise test scores
+  would be inflated.
+- **Class imbalance** — the training split ranges from ~280 (Rice) to ~1,500 (Dessert, Soup)
+  images. Handled with a class-weighted loss; **macro-F1** is reported next to accuracy.
+- **Overlapping categories** (Fried food vs Meat, Dessert vs Dairy product) — expected
+  confusions, analysed with a confusion matrix and Grad-CAM.
 
 Why ResNet-18: with ~11M parameters it is small enough to train from scratch on ~10k images,
 and its residual connections + BatchNorm make training from random initialisation stable.
-Bigger models would overfit or need far more data.
 
 ---
 
-## Getting started
+## Setup
 
-The project uses [uv](https://docs.astral.sh/uv/). `uv run` installs the dependencies on first use.
+Requirements: [uv](https://docs.astral.sh/uv/), Python 3.13 (uv installs it if needed), and an
+NVIDIA GPU for training.
 
-1. Create your local env file and set `KAGGLE_API_TOKEN` in it
-   (https://www.kaggle.com/settings/api → Generate New Token):
+```bash
+uv sync --all-extras
+```
 
-   ```bash
-   cp .env.example .env
-   ```
+On Windows this installs the CUDA 13.2 build of PyTorch (configured in `[tool.uv.sources]` in
+`pyproject.toml`; it needs a recent NVIDIA driver). Check that the GPU is visible:
 
-2. Download the dataset into `data/raw/food11/` and verify it:
+```bash
+uv run python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
 
-   ```bash
-   uv run scripts/download_data.py
-   ```
+Create your local env file and set `KAGGLE_API_TOKEN` in it
+(https://www.kaggle.com/settings/api → Generate New Token):
 
-   The script skips the download if a valid copy already exists.
-   Use `--force` to download again or `--verify-only` to just check the files on disk.
-
-3. Prepare the training data in `data/processed/food11/`:
-
-   ```bash
-   uv run scripts/prepare_data.py
-   ```
-
-   This removes duplicate images, resizes every image so its shorter side is 256 px
-   (use `--size` to change it) and renames class folders to `snake_case`.
-   Food-11 contains ~620 duplicates, mostly across splits: 564 test images also appear in
-   training or validation. Each duplicate is kept only in the earliest split
-   (training > validation > evaluation), so the test split is ~2,780 images instead of 3,347.
+```bash
+cp .env.example .env
+```
 
 ---
 
-## Evaluation and error analysis (#23)
+## Running the workflow
 
-Evaluate a trained checkpoint on the **validation** split (the default):
-
-```bash
-uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --output-dir reports/scratch_val
-```
-
-The `evaluation` split is the held-out test set. Run it **once per final model** only,
-never to compare or tune configurations:
+### 1. Download the dataset
 
 ```bash
-uv run python -m src.evaluation.cli --checkpoint checkpoints/scratch_best.pt --split evaluation --output-dir reports/scratch_test
+uv run scripts/download_data.py
 ```
 
-Only the requested split is loaded. The output directory must be new or empty, so reports from
-different checkpoints cannot be mixed. `reports/` is git-ignored; copy the figures you want to
-keep (e.g. for the presentation) into `docs/`.
+Downloads Food-11 into `data/raw/food11/` and checks the image counts. A valid existing copy is
+not downloaded again; use `--force` to re-download or `--verify-only` to only check the files.
 
-Match preprocessing to training: `--image-size 128` for a 128 px model, or the default
-224; add `--imagenet-stats` for the pretrained reference trained with ImageNet normalization.
-Checkpoint loading follows the inference engine: a raw state dict, `model_state_dict`,
-or `state_dict`, with an 11-class ResNet-18 output in `src.data.constants.CLASSES` order.
+### 2. Prepare the data
 
-Options include `--device cpu`, `--batch-size 32`, `--num-workers 0` (Windows-friendly),
-and `--gradcam-examples 8` (0 disables Grad-CAM). Reports contain:
+```bash
+uv run scripts/prepare_data.py
+```
 
-- `metrics.json`: accuracy, top-3 accuracy, macro-F1, per-class precision/recall/F1,
-  support and one-vs-rest ROC-AUC, confusion matrix, checkpoint SHA-256, and run settings.
-  Undefined AUC (no positive or negative examples) is JSON `null`; undefined
-  precision/recall/F1 is 0. Macro-F1 includes all 11 classes.
-- `predictions.csv`: image paths relative to the data root, labels, predictions, confidence.
-- `predictions.npz`: integer targets and full-precision probabilities, in CSV image order.
-- `confusion_matrix_counts.png`, `confusion_matrix_normalized.png` (row-normalized),
-  and `per_class_metrics.png`, suitable for presentation slides.
-- `gradcam/`: the highest-confidence misclassifications (or correct examples if there are no
-  errors). Each plot shows the model input crop, the Grad-CAM for the predicted class and,
-  for errors, the Grad-CAM for the true class, from the last ResNet block.
+Builds `data/processed/food11/`: removes duplicate images (a duplicate is kept only in the
+earliest split, training > validation > evaluation), resizes every image so its shorter side is
+256 px, and renames class folders to `snake_case`. The folder is recreated on every run.
 
-Grad-CAM uses PyTorch autograd directly; evaluation needs only the core dependencies.
-The pipeline is tested on synthetic data; final metrics require a trained checkpoint.
+If you change the preparation (e.g. `--size`), recompute the normalisation statistics with
+`uv run scripts/compute_stats.py` and update `FOOD11_MEAN` / `FOOD11_STD` in
+`src/data/constants.py`.
+
+### 3. Train
+
+Main model, ResNet-18 from scratch (`configs/resnet18_scratch.yaml`):
+
+```bash
+uv run scripts/train.py
+```
+
+Pretrained reference (`configs/resnet18_pretrained.yaml`):
+
+```bash
+uv run scripts/train.py --config configs/resnet18_pretrained.yaml
+```
+
+The script checks the data and the GPU, trains with validation after every epoch, keeps the
+epoch with the best validation macro-F1, then evaluates that model on the validation split and
+prints the numbers for the [Results](#results) table. The scratch model always runs its full
+OneCycle schedule (80 epochs, ~32 min on an RTX 3050): most of its improvement comes in the
+final low-learning-rate epochs, so early stopping is disabled (`early_stopping_patience: null`).
+The pretrained reference stops early after 7 epochs without improvement. Outputs per experiment:
+
+| Path | Content |
+|------|---------|
+| `checkpoints/<experiment>/best.pt` | best weights + metadata (input size, normalisation, epoch, metrics) |
+| `checkpoints/<experiment>/last.pt` | full training state for resuming |
+| `checkpoints/<experiment>/history.json` | per-epoch loss, accuracy, macro-F1, learning rate |
+| `checkpoints/<experiment>/summary.json` | best epoch and metrics, training time, hardware |
+| `runs/<experiment>/` | TensorBoard logs |
+| `reports/<experiment>/validation/` | validation metrics, confusion matrices, Grad-CAM |
+
+Follow training live with `uv run tensorboard --logdir runs`. If training stops (Ctrl+C,
+crash, reboot), continue from the last finished epoch with `--resume`. An existing run is never
+overwritten; to start over, change `experiment` in the config or delete its folders.
+
+On an RTX 3050 one epoch takes ~22 s (the first one ~1.5 min while data workers start).
+Without a GPU the script refuses to start unless you pass `--allow-cpu` (training would take days).
+
+### 4. Evaluate on the test split (once per final model)
+
+Validation results are produced by `scripts/train.py`. When a model is final, evaluate it once
+on the held-out test split:
+
+```bash
+uv run python -m src.evaluation.cli --checkpoint checkpoints/resnet18_scratch/best.pt --split evaluation --output-dir reports/resnet18_scratch/test
+```
+
+Never use the test split to compare or tune configurations — use the default
+`--split validation` for that. A report folder contains:
+
+- `metrics.json` — accuracy, top-3 accuracy, macro-F1, per-class precision/recall/F1/ROC-AUC,
+  confusion matrix, checkpoint SHA-256 and run settings;
+- `predictions.csv` / `predictions.npz` — per-image predictions and probabilities;
+- `confusion_matrix_counts.png`, `confusion_matrix_normalized.png`, `per_class_metrics.png`;
+- `gradcam/` — the most confident mistakes, with Grad-CAM heatmaps for the predicted and the
+  true class.
+
+`reports/` is git-ignored; copy figures you want to keep (e.g. for the presentation) to `docs/`.
+
+### 5. Predict from the command line
+
+```bash
+uv run python -m src.inference.cli --image path/to/dish.jpg
+```
+
+Uses `checkpoints/resnet18_scratch/best.pt` unless `--checkpoint` is given. Also supports
+`--dir <folder>`, `--top-k N` and `--json`.
+
+### 6. REST API
+
+```bash
+uv run uvicorn app.api.main:app
+```
+
+Serves `checkpoints/resnet18_scratch/best.pt` (set `CHECKPOINT_PATH` to use another model).
+`GET /health` reports whether a model is loaded; `POST /predict` takes an image upload
+(`file`, JPG/PNG) and an optional `top_k` query parameter. Interactive docs:
+http://localhost:8000/docs.
+
+### 7. Web demo
+
+```bash
+uv run streamlit run app/ui/streamlit_app.py
+```
+
+Pick a trained model in the sidebar (all `best.pt` files under `checkpoints/` are listed),
+upload a photo and choose **Identify food** to see the top-3/top-5 classes with confidences.
+The demo calls the model directly; the API does not need to run.
+
+### 8. Export to ONNX (optional)
+
+```bash
+uv run python -m src.inference.onnx_export_cli --checkpoint checkpoints/resnet18_scratch/best.pt --output-dir checkpoints/onnx_scratch
+uv run python -m src.inference.onnx_predictor --model checkpoints/onnx_scratch/model.onnx --image path/to/dish.jpg
+```
+
+The export embeds class names and preprocessing in `model.onnx`, verifies that ONNX and
+PyTorch outputs match, and writes CPU timings to `export_report.json`. The ONNX predictor
+needs only `onnxruntime`, `numpy` and `pillow` — no PyTorch.
+
+### 9. Run the API and demo in Docker (optional)
+
+Runs steps 6 and 7 on any machine with Docker Desktop (or Docker Engine with Compose), without
+Python on the host. Copy the settings file and point `MODEL_CHECKPOINT` at a trained `best.pt`
+(default: `./checkpoints/resnet18_scratch/best.pt`):
+
+```bash
+cp .docker.env.example .docker.env
+docker compose --env-file .docker.env up --build -d --wait
+```
+
+The demo opens at http://localhost:8501 and the API docs at http://localhost:8000/docs.
+Both containers mount the checkpoint read-only as `/models/best.pt` and read its input size and
+normalisation from the file. Stop them with `docker compose --env-file .docker.env down`;
+append `api` or `demo` to `up` to start only one.
+
+The images run on CPU as a non-root user, with CPU-only PyTorch wheels pinned to the versions in
+`uv.lock`; data, weights and credentials are never copied into them. If the checkpoint is
+missing, the API stays up but reports it in `/health` and answers `/predict` with 503, so its
+container is unhealthy and `up --wait` fails.
 
 ---
 
-## Tech stack
+## Results
 
-- Python 3.12+
-- PyTorch + torchvision
-- scikit-learn (metrics), matplotlib / seaborn (plots)
-- TensorBoard (training curves)
-- pytorch-grad-cam (interpretability)
-- Streamlit (demo), FastAPI (inference API), ONNX Runtime
-- Docker
+Validation split, best epoch by macro-F1. Filled in from the output of `scripts/train.py`
+(also in `checkpoints/<experiment>/summary.json` and `reports/<experiment>/validation/`).
 
----
+| Model | Hardware | Training time | Epochs (best) | Val accuracy | Val top-3 | Val macro-F1 |
+|-------|----------|---------------|---------------|--------------|-----------|--------------|
+| ResNet-18 from scratch | — | — | — | — | — | — |
+| ResNet-18 ImageNet-pretrained | — | — | — | — | — | — |
 
-## Training (#7)
-
-Each experiment is a YAML file in `configs/`:
-
-- `resnet18_scratch.yaml` — main model, random initialisation, SGD + OneCycle, up to 80 epochs;
-- `resnet18_pretrained.yaml` — reference model from ImageNet weights, AdamW + cosine, up to 25 epochs.
-
-```bash
-uv run python -m src.training.cli --config configs/resnet18_scratch.yaml
-```
-
-After every epoch the model is validated. Results go to `checkpoints/<experiment>/`:
-
-- `best.pt` — weights with the best validation macro-F1 plus metadata (image size,
-  normalisation, epoch, metrics); use it for evaluation, inference and the demo;
-- `last.pt` — full training state, used to continue an interrupted run;
-- `history.json` — per-epoch loss, accuracy, macro-F1 and learning rate.
-
-Training stops early when validation macro-F1 has not improved for `early_stopping_patience`
-epochs. An existing run is never overwritten: continue it with
-
-```bash
-uv run python -m src.training.cli --config configs/resnet18_scratch.yaml --resume checkpoints/resnet18_scratch/last.pt
-```
-
-or change `experiment` in the config to start a new one. Follow training live with:
-
-```bash
-uv run tensorboard --logdir runs
-```
-
-Useful options: `--device cpu|cuda`, `--num-workers 0` (if data loading fails on Windows),
-`--epochs N`, and `--limit-batches N` for a quick smoke test. Full training needs a CUDA GPU:
-on a CPU one epoch at 224 px takes tens of minutes.
+Test-split results are added once both models are final.
 
 ---
 
-## Roadmap
+## Project structure
 
-- [ ] Data pipeline and EDA
-- [ ] ResNet-18 trained from scratch
-- [ ] Scratch vs pretrained comparison
-- [ ] Error analysis, confusion matrix, Grad-CAM
-- [x] CLI inference, FastAPI service
-- [ ] Streamlit demo (UI ready; to be checked with a trained checkpoint)
-- [ ] ONNX export and Docker packaging
+```
+configs/             experiment configs (YAML)
+scripts/             one-command steps: download_data, prepare_data, compute_stats, train
+src/
+  data/              dataset, transforms, dataloaders, class balancing, constants
+  models/            ResNet-18 factory (scratch / ImageNet-pretrained)
+  training/          config, training loop, losses, optimisers/schedules, checkpoints
+  evaluation/        metrics, report figures, Grad-CAM, evaluation CLI
+  inference/         checkpoint loading, predictor + CLI, image decoding, ONNX export/runtime
+app/
+  api/               FastAPI service
+  ui/                Streamlit demo
+notebooks/           exploratory data analysis
+docker/              container healthcheck and smoke test (with Dockerfile, compose.yaml)
+tests/unit, tests/integration
+data/ checkpoints/ runs/ reports/    generated, git-ignored
+```
+
+ML logic lives in `src/`; `scripts/` and `app/` only call it.
 
 ---
 
-## Streamlit demo (#22)
-
-From the repository root, start the demo:
+## Development
 
 ```bash
-uv run --extra app python -m streamlit run app/ui/streamlit_app.py
+uv run pytest
+uv run ruff check .
 ```
 
-Open the local URL shown in the terminal (normally `http://localhost:8501`). In the
-sidebar's **Model settings**, pick a trained checkpoint, the input size (128 or 224 px),
-normalization (Food-11 for the from-scratch model, ImageNet for the pretrained reference)
-and device. Input size and normalization must match the settings the checkpoint was trained with.
-
-The demo lists every `.pt` / `.pth` file in `checkpoints/`. Set `CHECKPOINT_DIR` to look in
-another folder, or `CHECKPOINT_PATH` to add a specific file and select it by default.
-Without a checkpoint, predictions stay disabled.
-
-Upload a JPG/PNG (up to 10 MB and 20 megapixels), then choose **Identify food**.
-The photo and a horizontal confidence chart appear side by side; switch between
-Top-3 and Top-5 without rerunning inference. Changed photos, weights, or model
-settings invalidate old results. If the model cannot be loaded, the error message shows the reason.
-Models are cached, and uploaded photos are kept in memory rather than saved to disk.
-The demo calls local inference directly; running the FastAPI server is not required.
-
----
-
-## ONNX export and CPU inference (#12)
-
-Export the final trained model using its saved input size and normalization:
-
-```bash
-uv run --extra app python -m src.inference.onnx_export_cli --checkpoint checkpoints/resnet18_scratch/best.pt --output-dir checkpoints/onnx_scratch
-```
-
-Both `best.pt` (inference metadata) and `last.pt` (training config) are supported.
-For older raw state dictionaries or `state_dict` wrappers without preprocessing metadata,
-provide `--image-size 224 --normalization food11` explicitly (`imagenet` for the reference).
-Overrides that conflict with saved metadata are rejected. Class order must match Food-11.
-
-The output directory must not exist. It is published only after validation succeeds:
-
-- `model.onnx`: self-contained FP32 weights, dynamic batch dimension, fixed input resolution;
-  input `images` is normalized NCHW, output `logits` has 11 columns. Class names, resize/crop,
-  normalization values, and checkpoint SHA-256 are embedded in the model metadata.
-- `export_report.json`: ONNX checker result, PyTorch vs
-  ONNX logit/probability comparisons and top-1 agreement at batch sizes 1 and 3, plus CPU timings
-  and environment details. Verification uses seeded synthetic tensors, not the test split.
-
-CPU benchmarks use batch size 1, the same intra-op thread count for both backends (default 1),
-5 warmup calls and 30 timed calls. Set `--threads`, `--warmup`, or `--iterations` to change these.
-Mean, median, p95 latency and throughput cover forward passes only: loading, image decoding,
-and preprocessing are excluded. Timings are machine-specific; export parity is not a quality score.
-
-Run the exported model on a photo:
-
-```bash
-uv run --extra app python -m src.inference.onnx_predictor --model checkpoints/onnx_scratch/model.onnx --image path/to/dish.jpg --top-k 3
-```
-
-The runtime uses the model's embedded preprocessing settings and Pillow/NumPy equivalents of
-the project's validation transforms. It does not import PyTorch or torchvision. For a separate
-deployment environment, install only `onnxruntime numpy pillow`, copy `model.onnx` and the
-`src/inference/__init__.py` / `src/inference/onnx_predictor.py` files preserving their paths,
-then run `python -m src.inference.onnx_predictor` from their parent project directory.
-The `uv run` commands above use the full development environment, so they still install PyTorch.
-
-Tests exercise real ResNet-18 export with random weights, preprocessing equivalence for varied
-image shapes/modes, and inference in a subprocess that blocks PyTorch imports. Exporting the
-final trained checkpoint remains a separate step once training is complete.
-
----
-
-## Docker: API and demo (#14)
-
-Install Docker Desktop with Linux containers enabled (or Docker Engine with Compose).
-Python is not needed on the host. From the repository root:
-
-1. Copy `.docker.env.example` to `.docker.env`.
-2. Set `MODEL_CHECKPOINT` to a trained `.pt` file, using a project-relative or absolute
-   host path. Set `IMAGE_SIZE` (128 or 224) and `NORMALIZATION` (food11 or imagenet) to
-   match training. `API_PORT` and `DEMO_PORT` default to 8000 and 8501.
-3. Start both services:
-
-   ```bash
-   docker compose --env-file .docker.env up --build -d --wait
-   ```
-
-Open the demo at `http://localhost:8501` or the API's interactive docs at
-`http://localhost:8000/docs`. The demo calls local inference in its own container;
-the API is not required for it. Each service mounts the same checkpoint read-only
-at `/models/model.pt`. Demo controls initially use the environment settings and can
-still be changed on the page.
-
-Run one service by appending `api` or `demo` to the `up` command. Inspect logs or stop:
-
-```bash
-docker compose --env-file .docker.env logs -f
-docker compose --env-file .docker.env down
-```
-
-The API requires a checkpoint at startup. It reads input size and normalization
-from `best.pt` metadata or `last.pt` config, rejects conflicting environment settings,
-and returns 503 if its model is unavailable. Older checkpoints without metadata use
-the supplied environment values. The demo's healthcheck verifies that its web server
-is ready; its model loads on the first prediction. API health additionally checks
-that the model is loaded. Missing host files fail the bind mount instead of creating
-empty checkpoint directories.
-
-Images run on CPU as a non-root user. The shared runtime installs only serving
-dependencies at versions constrained by `uv.lock`, with CPU torch/torchvision wheels
-from the official PyTorch index. Datasets, weights, `.git`, local environments and
-credentials are excluded from the build context. Compose exposes ports on localhost.
-GPU serving is outside this setup.
-
-Developer validation (the smoke script itself uses only Python's standard library):
+Tests run on synthetic data, so they need neither the dataset nor a GPU. CI runs both on every
+pull request. Changes to the images (Dockerfile, `src/`, `app/`, dependencies) are also checked
+by building both images and running `python docker/smoke_test.py`, which starts real containers
+with random weights; run the same locally with Docker Desktop running:
 
 ```bash
 docker build --target api -t food-classifier-api:local .
 docker build --target demo -t food-classifier-demo:local .
 python docker/smoke_test.py
-```
-
-The smoke test creates temporary random weights and a photo, starts both containers,
-checks API upload/prediction and healthchecks, and runs a real Streamlit prediction
-and Top-5 rerun through AppTest inside the demo container. It also checks CPU-only
-PyTorch, non-root execution and API failure without a checkpoint. Only its own
-containers and temporary files are removed; the real dataset and checkpoints are
-untouched. CI runs the same builds and test. Final model quality depends on training.
+``` Branching, conventions and project decisions are described in
+[AGENTS.md](AGENTS.md).
 
 ---
 
@@ -305,5 +298,5 @@ untouched. CI runs the same builds and test. Final model quality depends on trai
 
 - Code: MIT
 - Dataset: Food-11, Multimedia Signal Processing Group (MMSPG), EPFL.
-  Singla A., Yuan L., Ebrahimi T. *Food/Non-food Image Classification and Food Categorization using Pre-Trained GoogLeNet Model*, MADiMa 2016.
-  Use subject to the dataset's terms.
+  Singla A., Yuan L., Ebrahimi T. *Food/Non-food Image Classification and Food Categorization
+  using Pre-Trained GoogLeNet Model*, MADiMa 2016. Use subject to the dataset's terms.

@@ -26,6 +26,7 @@ def main() -> None:
     options = parser.parse_args()
     name = f"food-api-smoke-{uuid.uuid4().hex[:10]}"
     demo_name = f"food-demo-smoke-{uuid.uuid4().hex[:10]}"
+    no_model_name = f"food-api-nomodel-smoke-{uuid.uuid4().hex[:10]}"
     with tempfile.TemporaryDirectory(prefix="food-api-smoke-") as directory:
         temporary_root = Path(directory).resolve()
         assert temporary_root.parent == Path(tempfile.gettempdir()).resolve()
@@ -40,7 +41,7 @@ def main() -> None:
             "assert torch.version.cuda is None; assert not Path('/app/.env').exists(); "
             "torch.save({'model_state_dict':build_model().state_dict(),"
             "'metadata':{'image_size':128,'normalization':'food11','classes':list(CLASSES)}},"
-            "'/models/model.pt'); Image.new('RGB',(80,60),'orange').save('/models/photo.png')"
+            "'/models/best.pt'); Image.new('RGB',(80,60),'orange').save('/models/photo.png')"
         )
         docker(
             "run",
@@ -62,8 +63,6 @@ def main() -> None:
                 name,
                 "--publish",
                 "127.0.0.1::8000",
-                "--env",
-                "CHECKPOINT_PATH=/models/model.pt",
                 "--mount",
                 f"type=bind,source={root},target=/models,readonly",
                 options.api_image,
@@ -102,8 +101,47 @@ def main() -> None:
             assert all(0 <= item["probability"] <= 1 for item in prediction["predictions"])
             docker("exec", name, "python", "docker/healthcheck.py")
             docker("exec", name, "python", "-c", "import os; assert os.getuid() != 0")
-            missing = docker("run", "--rm", options.api_image, check=False)
-            assert missing.returncode != 0 and "CHECKPOINT_PATH" in missing.stderr
+
+            # Without a mounted checkpoint the API stays up, reports why and refuses to predict;
+            # the container healthcheck then fails, so `compose up --wait` does not succeed.
+            docker("run", "-d", "--name", no_model_name, options.api_image)
+            no_model_check = """
+import io, json, time, urllib.error, urllib.request
+from PIL import Image
+deadline = time.monotonic() + 60
+while True:
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2) as response:
+            health = json.load(response)
+        break
+    except OSError:
+        if time.monotonic() > deadline:
+            raise
+        time.sleep(0.5)
+assert health["model_loaded"] is False and "not found" in health["error"], health
+photo = io.BytesIO()
+Image.new("RGB", (32, 32), "orange").save(photo, format="PNG")
+boundary = "no-model-boundary"
+body = (
+    f'--{boundary}\\r\\nContent-Disposition: form-data; name="file"; filename="p.png"\\r\\n'
+    "Content-Type: image/png\\r\\n\\r\\n"
+).encode() + photo.getvalue() + f"\\r\\n--{boundary}--\\r\\n".encode()
+request = urllib.request.Request(
+    "http://127.0.0.1:8000/predict",
+    data=body,
+    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+)
+try:
+    urllib.request.urlopen(request, timeout=5)
+    raise AssertionError("predict should fail without a model")
+except urllib.error.HTTPError as error:
+    assert error.code == 503, error.code
+"""
+            docker("exec", no_model_name, "python", "-c", no_model_check)
+            unhealthy = docker(
+                "exec", no_model_name, "python", "docker/healthcheck.py", check=False
+            )
+            assert unhealthy.returncode != 0
             docker(
                 "run",
                 "-d",
@@ -112,13 +150,7 @@ def main() -> None:
                 "--publish",
                 "127.0.0.1::8501",
                 "--env",
-                "CHECKPOINT_PATH=/models/model.pt",
-                "--env",
                 "CHECKPOINT_DIR=/models",
-                "--env",
-                "IMAGE_SIZE=128",
-                "--env",
-                "NORMALIZATION=food11",
                 "--mount",
                 f"type=bind,source={root},target=/models,readonly",
                 options.demo_image,
@@ -142,8 +174,9 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 at = AppTest.from_file("app/ui/streamlit_app.py", default_timeout=60).run()
 assert not at.exception
-assert at.selectbox[1].value == 128
-assert at.selectbox[3].value == "cpu"
+assert at.selectbox[0].options == ["/models/best.pt"], at.selectbox[0].options
+# Input size and normalisation come from the checkpoint metadata, not from the UI.
+assert any("128 px" in caption.value for caption in at.sidebar.caption)
 at.file_uploader[0].upload("photo.png", Path("/models/photo.png").read_bytes(), "image/png").run()
 at.button[0].click().run()
 assert not at.exception and not at.error
@@ -158,16 +191,16 @@ print("Real Streamlit prediction and Top-5 rerun passed")
             docker("exec", demo_name, "python", "-c", "import os; assert os.getuid() != 0")
             print(
                 "Both container smokes passed: CPU weights, readiness, API upload, "
-                "demo prediction, non-root and missing-checkpoint failure"
+                "demo prediction, non-root and missing-checkpoint handling"
             )
         except Exception:
-            print(docker("logs", name, check=False).stdout)
-            print(docker("logs", name, check=False).stderr)
-            print(docker("logs", demo_name, check=False).stderr)
+            for container in (name, no_model_name, demo_name):
+                logs = docker("logs", container, check=False)
+                print(f"--- {container}\n{logs.stdout}\n{logs.stderr}")
             raise
         finally:
-            docker("rm", "-f", name, check=False)
-            docker("rm", "-f", demo_name, check=False)
+            for container in (name, no_model_name, demo_name):
+                docker("rm", "-f", container, check=False)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from src.data.constants import DEFAULT_IMAGE_SIZE
 from src.evaluation.pipeline import evaluate_checkpoint
 
 
@@ -21,12 +20,17 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         default="validation",
         help="'evaluation' is the held-out test set: run it once per final model",
     )
-    parser.add_argument("--image-size", type=int, default=DEFAULT_IMAGE_SIZE)
+    # Preprocessing is read from the checkpoint; these are only for checkpoints without metadata.
+    parser.add_argument(
+        "--image-size", type=int, default=None, help="Only for checkpoints without metadata"
+    )
     parser.add_argument(
         "--imagenet-stats",
-        action="store_true",
+        action="store_const",
+        const=True,
+        default=None,
         dest="use_imagenet_stats",
-        help="Use for the pretrained reference; must match training normalization",
+        help="Only for checkpoints without metadata: use ImageNet normalisation",
     )
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=0)

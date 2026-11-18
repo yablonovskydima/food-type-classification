@@ -34,7 +34,9 @@ class TrainConfig:
     label_smoothing: float = 0.1
     amp: bool = True
     grad_clip_norm: float | None = None
-    early_stopping_patience: int = 15
+    # None disables early stopping: the full schedule always runs, best.pt still keeps the best
+    # epoch. Use it with OneCycle, whose biggest gains come in the final low-LR epochs.
+    early_stopping_patience: int | None = 15
 
     seed: int = 42
     checkpoint_dir: str = "checkpoints"
@@ -48,16 +50,24 @@ class TrainConfig:
             raise ValueError(f"optimizer must be one of {OPTIMIZERS}")
         if self.scheduler not in SCHEDULERS:
             raise ValueError(f"scheduler must be one of {SCHEDULERS}")
-        positive = ("image_size", "batch_size", "epochs", "lr", "early_stopping_patience")
+        positive = ("image_size", "batch_size", "epochs", "lr")
         for name in positive:
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
+        if self.early_stopping_patience is not None and self.early_stopping_patience <= 0:
+            raise ValueError("early_stopping_patience must be positive, or null to disable it")
         if self.num_workers < 0 or self.warmup_epochs < 0 or self.weight_decay < 0:
             raise ValueError("num_workers, warmup_epochs and weight_decay must be >= 0")
         if self.scheduler == "cosine" and self.warmup_epochs >= self.epochs:
             raise ValueError("warmup_epochs must be smaller than epochs")
         if not 0 <= self.label_smoothing < 1 or not 0 <= self.random_erasing_p <= 1:
             raise ValueError("label_smoothing must be in [0, 1) and random_erasing_p in [0, 1]")
+
+    def should_stop_early(self, epochs_without_improvement: int) -> bool:
+        return (
+            self.early_stopping_patience is not None
+            and epochs_without_improvement >= self.early_stopping_patience
+        )
 
     @property
     def use_imagenet_stats(self) -> bool:

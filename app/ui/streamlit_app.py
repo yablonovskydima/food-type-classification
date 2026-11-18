@@ -5,28 +5,24 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.data.constants import DEFAULT_IMAGE_SIZE
 from src.inference.images import MAX_IMAGE_MEGAPIXELS, MAX_UPLOAD_MB, decode_uploaded_image
 from src.inference.predictor import FoodPredictor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CHECKPOINT_EXTENSIONS = {".pt", ".pth"}
-IMAGE_SIZES = (128, 224)
+LOAD_ERRORS = (OSError, ValueError, RuntimeError, pickle.UnpicklingError)
 
 
 @st.cache_resource(show_spinner=False, max_entries=2)
 def load_predictor(
     checkpoint_path: str,
     checkpoint_version: tuple[int, int],
-    image_size: int,
-    use_imagenet_stats: bool,
     device: str,
 ) -> FoodPredictor:
+    # checkpoint_version (mtime, size) is unused in the body on purpose: it is part of the
+    # cache key, so a retrained best.pt at the same path is loaded again. Do not prefix it
+    # with "_" — Streamlit excludes such parameters from the cache key.
     return FoodPredictor(
-        checkpoint_path=checkpoint_path,
-        image_size=image_size,
-        use_imagenet_stats=use_imagenet_stats,
-        device=None if device == "auto" else device,
+        checkpoint_path=checkpoint_path, device=None if device == "auto" else device
     )
 
 
@@ -35,14 +31,13 @@ def display_name(category: str) -> str:
 
 
 def find_checkpoints() -> dict[str, Path]:
+    # Every best.pt under CHECKPOINT_DIR (default checkpoints/); CHECKPOINT_PATH is listed first.
     checkpoint_dir = Path(os.getenv("CHECKPOINT_DIR", PROJECT_ROOT / "checkpoints")).expanduser()
     paths = []
     if env_checkpoint := os.getenv("CHECKPOINT_PATH"):
         paths.append(Path(env_checkpoint).expanduser())
     if checkpoint_dir.is_dir():
-        paths.extend(
-            sorted(p for p in checkpoint_dir.rglob("*") if p.suffix in CHECKPOINT_EXTENSIONS)
-        )
+        paths.extend(sorted(checkpoint_dir.rglob("best.pt")))
 
     checkpoints: dict[str, Path] = {}
     for path in paths:
@@ -65,61 +60,52 @@ def checkpoint_version(path: Path) -> tuple[int, int] | None:
     return stat.st_mtime_ns, stat.st_size
 
 
+def describe_model(predictor: FoodPredictor) -> str:
+    metadata = getattr(predictor, "metadata", {}) or {}
+    parts = [
+        f"{getattr(predictor, 'image_size', '?')} px",
+        f"{getattr(predictor, 'normalization', '?')} normalisation",
+    ]
+    if "epoch" in metadata:
+        parts.append(f"epoch {metadata['epoch']}")
+    macro_f1 = (metadata.get("metrics") or {}).get("macro_f1")
+    if macro_f1 is not None:
+        parts.append(f"val macro-F1 {macro_f1:.3f}")
+    return " · ".join(parts)
+
+
 def main() -> None:
     st.set_page_config(page_title="Food Lens · Food-11", page_icon="🍽️", layout="wide")
     st.title("Food Lens")
     st.markdown("### A food photo. Eleven possibilities.")
     st.write("Upload a photo to explore the food categories the model recognises.")
 
-    try:
-        size_index = IMAGE_SIZES.index(int(os.getenv("IMAGE_SIZE") or DEFAULT_IMAGE_SIZE))
-        normalization_index = ["food11", "imagenet"].index(os.getenv("NORMALIZATION") or "food11")
-        device_index = ["auto", "cpu", "cuda"].index(os.getenv("DEVICE") or "auto")
-    except ValueError:
-        st.error(
-            "Check configuration: IMAGE_SIZE=128|224, NORMALIZATION=food11|imagenet, "
-            "DEVICE=auto|cpu|cuda."
-        )
-        return
-
     checkpoints = find_checkpoints()
+    predictor = None
     with st.sidebar:
         st.header("Food-11 demo")
         st.caption("ResNet-18 · 11 food categories")
-        with st.expander("Model settings", expanded=True):
-            checkpoint_label = st.selectbox(
-                "Trained checkpoint",
-                list(checkpoints),
-                placeholder="No checkpoints found",
-            )
-            image_size = st.selectbox(
-                "Input size (px)",
-                IMAGE_SIZES,
-                index=size_index,
-            )
-            normalization = st.selectbox(
-                "Normalization",
-                ["Food-11", "ImageNet"],
-                index=normalization_index,
-            )
-            device = st.selectbox(
-                "Device",
-                ["auto", "cpu", "cuda"],
-                index=device_index,
-            )
-            st.caption(
-                "Input size and normalization must match the checkpoint's training settings: "
-                "Food-11 for the from-scratch model, ImageNet for the pretrained reference."
-            )
+        checkpoint_label = st.selectbox(
+            "Trained model", list(checkpoints), placeholder="No trained model found"
+        )
+        device = st.selectbox("Device", ["auto", "cpu", "cuda"])
+        checkpoint = checkpoints.get(checkpoint_label) if checkpoint_label else None
+        version = checkpoint_version(checkpoint) if checkpoint is not None else None
+        if version is not None:
+            try:
+                with st.spinner("Loading the model…"):
+                    predictor = load_predictor(str(checkpoint), version, device)
+                # Input size and normalisation come from the checkpoint itself.
+                st.caption(describe_model(predictor))
+            except LOAD_ERRORS as error:
+                st.error(f"The model could not be loaded.\n\nDetails: {error}")
         st.divider()
         st.caption("Photos stay in memory on the demo server and are not saved to disk.")
 
-    checkpoint = checkpoints.get(checkpoint_label) if checkpoint_label else None
-    version = checkpoint_version(checkpoint) if checkpoint is not None else None
     if version is None:
         st.info(
-            "No trained checkpoint found. Put a `.pt` file into `checkpoints/` "
-            "or set `CHECKPOINT_PATH` to enable predictions."
+            "No trained model found. Train one with `uv run scripts/train.py` "
+            "(it saves `checkpoints/<experiment>/best.pt`) or set `CHECKPOINT_PATH`."
         )
 
     photo_column, result_column = st.columns(2, gap="large")
@@ -154,28 +140,16 @@ def main() -> None:
             hashlib.sha256(content).hexdigest(),
             str(checkpoint) if checkpoint is not None else "",
             version,
-            image_size,
-            normalization,
             device,
         )
-        if st.button("Identify food", type="primary", disabled=version is None):
+        if st.button("Identify food", type="primary", disabled=predictor is None):
             st.session_state.pop("food_prediction", None)
             try:
                 with st.spinner("Looking at your photo…"):
-                    predictor = load_predictor(
-                        str(checkpoint),
-                        version,
-                        image_size,
-                        normalization == "ImageNet",
-                        device,
-                    )
                     predictions = predictor.predict_image(image, top_k=5)
                 st.session_state.food_prediction = {"key": result_key, "predictions": predictions}
-            except (OSError, ValueError, RuntimeError, pickle.UnpicklingError) as error:
-                st.error(
-                    "The model could not make a prediction. Check the trained checkpoint, "
-                    f"preprocessing settings and selected device.\n\nDetails: {error}"
-                )
+            except LOAD_ERRORS as error:
+                st.error(f"The model could not make a prediction.\n\nDetails: {error}")
                 return
         result = st.session_state.get("food_prediction")
         if not result or result["key"] != result_key:

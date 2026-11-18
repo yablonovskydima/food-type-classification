@@ -19,28 +19,31 @@ dependencies = [
     "kaggle",
     "six",  # kaggle 2.x imports it but does not declare it as a dependency
     "python-dotenv",
-    "dotenv>=0.9.9",
 ]
 
 [project.optional-dependencies]
 app = [
-    "gradio",
     "fastapi",
     "uvicorn",
     "python-multipart",
+    "streamlit>=1.67.0",
     "onnx",
     "onnxruntime",
-    "grad-cam",
-    "streamlit>=1.67.0",
     "onnxscript>=0.7.2",
 ]
 dev = ["pytest", "ruff", "pre-commit", "jupyter"]
-serving = [
-    "fastapi>=0.162.5",
-    "python-multipart>=0.0.33",
-    "streamlit>=1.67.0",
-    "uvicorn>=0.54.0",
-]
+
+# On Windows install the CUDA build of PyTorch (the PyPI wheel is CPU-only there).
+# It needs an NVIDIA driver with CUDA 13.2+ and still runs on machines without a GPU.
+# Linux (CI) and macOS keep the default PyPI wheels.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
 
 [tool.setuptools.packages.find]
 include = ["src*"]
