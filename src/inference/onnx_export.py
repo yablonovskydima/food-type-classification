@@ -16,6 +16,7 @@ import onnxruntime as ort
 import torch
 
 from src.data.constants import CLASSES, FOOD11_MEAN, FOOD11_STD, IMAGENET_MEAN, IMAGENET_STD
+from src.inference.checkpoints import load_checkpoint, resolve_preprocessing
 from src.inference.onnx_predictor import METADATA_KEY, OnnxFoodPredictor
 from src.models import build_model
 
@@ -23,42 +24,16 @@ from src.models import build_model
 def load_export_model(
     checkpoint_path: Path, image_size: int | None, normalization: str | None
 ) -> tuple[torch.nn.Module, dict[str, Any]]:
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    if not isinstance(checkpoint, dict):
-        raise ValueError("Checkpoint must contain a state dictionary")
-    metadata = checkpoint.get("metadata", {})
-    if not isinstance(metadata, dict):
-        raise ValueError("Checkpoint metadata must be a dictionary")
-    if metadata.get("architecture", "resnet18") != "resnet18":
-        raise ValueError("Only ResNet-18 checkpoints are supported")
-    if metadata.get("classes", list(CLASSES)) != list(CLASSES):
-        raise ValueError("Checkpoint class order differs from canonical Food-11 classes")
-    saved_size = metadata.get("image_size")
-    saved_normalization = metadata.get("normalization")
-    # last.pt stores training settings under config instead of inference metadata.
-    config = checkpoint.get("config", {})
-    if isinstance(config, dict):
-        saved_size = saved_size if saved_size is not None else config.get("image_size")
-        if saved_normalization is None and "pretrained" in config:
-            saved_normalization = "imagenet" if config["pretrained"] else "food11"
-    if image_size is not None and saved_size is not None and image_size != saved_size:
-        raise ValueError("Requested image size conflicts with checkpoint metadata")
-    if normalization is not None and saved_normalization is not None:
-        if normalization != saved_normalization:
-            raise ValueError("Requested normalization conflicts with checkpoint metadata")
-    image_size = saved_size if image_size is None else image_size
-    normalization = saved_normalization if normalization is None else normalization
-    if type(image_size) is not int or image_size < 32:
-        raise ValueError("Provide --image-size >= 32 for a checkpoint without input metadata")
-    if normalization not in {"food11", "imagenet"}:
-        raise ValueError("Provide --normalization food11|imagenet for an untagged checkpoint")
+    state_dict, saved = load_checkpoint(checkpoint_path, map_location="cpu")
+    # Unlike the predictor, export never guesses: untagged checkpoints need explicit values.
+    image_size, normalization = resolve_preprocessing(
+        saved, image_size, normalization, require_metadata=True
+    )
     mean, std = (
         (IMAGENET_MEAN, IMAGENET_STD) if normalization == "imagenet" else (FOOD11_MEAN, FOOD11_STD)
     )
     model = build_model(pretrained=False)
-    model.load_state_dict(
-        checkpoint.get("model_state_dict", checkpoint.get("state_dict", checkpoint))
-    )
+    model.load_state_dict(state_dict)
     model.eval()
     with checkpoint_path.open("rb") as stream:
         checkpoint_hash = hashlib.file_digest(stream, "sha256").hexdigest()

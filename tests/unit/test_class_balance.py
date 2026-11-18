@@ -93,8 +93,7 @@ def test_dataloaders_use_weighted_sampler_only_for_training(imbalanced_dataset_d
         seed=0,
     )
     assert isinstance(loaders["training"].sampler, torch.utils.data.WeightedRandomSampler)
-    for split in ("validation", "evaluation"):
-        assert isinstance(loaders[split].sampler, torch.utils.data.SequentialSampler)
+    assert isinstance(loaders["validation"].sampler, torch.utils.data.SequentialSampler)
     images, labels = next(iter(loaders["training"]))
     assert images.shape == (4, 3, 32, 32)
 

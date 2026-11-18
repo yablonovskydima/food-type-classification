@@ -121,7 +121,8 @@ def test_create_dataloaders(mock_dataset_dir: Path) -> None:
         pin_memory=False,
     )
 
-    assert set(loaders.keys()) == {"training", "validation", "evaluation"}
+    # The test split is never loaded for training.
+    assert set(loaders.keys()) == {"training", "validation"}
 
     for loader in loaders.values():
         batch_images, batch_targets = next(iter(loader))

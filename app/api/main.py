@@ -1,31 +1,32 @@
-import io
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
-from PIL import Image, UnidentifiedImageError
 
 from app.api.schemas import HealthResponse, PredictionItem, PredictResponse
+from src.inference.checkpoints import DEFAULT_CHECKPOINT
+from src.inference.images import decode_uploaded_image
 from src.inference.predictor import FoodPredictor
 
 predictor: FoodPredictor | None = None
+load_error: str | None = None
+
+
+def checkpoint_path() -> Path:
+    return Path(os.getenv("CHECKPOINT_PATH", str(DEFAULT_CHECKPOINT)))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global predictor
-    checkpoint = os.getenv("CHECKPOINT_PATH")
-    pretrained = os.getenv("USE_PRETRAINED", "0") == "1"
-
-    if pretrained and not checkpoint:
-        from src.models import build_model
-
-        model = build_model(pretrained=True)
-        predictor = FoodPredictor(model=model, use_imagenet_stats=True)
-    else:
-        predictor = FoodPredictor(checkpoint_path=checkpoint)
-
+    # Serve only trained weights; without a checkpoint /predict answers 503 instead of
+    # returning predictions from a random model.
+    global predictor, load_error
+    try:
+        predictor, load_error = FoodPredictor(checkpoint_path=checkpoint_path()), None
+    except (OSError, ValueError, RuntimeError) as error:
+        predictor, load_error = None, str(error)
     yield
     predictor = None
 
@@ -41,7 +42,9 @@ app = FastAPI(
 def health_check() -> HealthResponse:
     return HealthResponse(
         status="ok",
-        model_loaded=predictor is not None and predictor.model is not None,
+        model_loaded=predictor is not None,
+        checkpoint=str(checkpoint_path()),
+        error=load_error,
     )
 
 
@@ -50,42 +53,23 @@ async def predict(
     file: Annotated[UploadFile, File(...)],
     top_k: Annotated[int, Query(ge=1, le=11)] = 3,
 ) -> PredictResponse:
+    if predictor is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No model loaded: {load_error}",
+        )
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Filename is required",
         )
-
-    content = await file.read()
-    if not content:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file is empty",
-        )
-
     try:
-        image = Image.open(io.BytesIO(content))
-        image.verify()
-        image = Image.open(io.BytesIO(content)).convert("RGB")
-    except (UnidentifiedImageError, OSError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid image file or unsupported image format",
-        ) from None
-
-    current_predictor = predictor
-    if current_predictor is None:
-        current_predictor = FoodPredictor()
-
-    raw_results = current_predictor.predict_image(image, top_k=top_k)
+        image = decode_uploaded_image(await file.read())
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from None
 
     predictions = [
-        PredictionItem(
-            category=item["class"],
-            probability=item["probability"],
-            index=item["index"],
-        )
-        for item in raw_results
+        PredictionItem(category=item["class"], probability=item["probability"], index=item["index"])
+        for item in predictor.predict_image(image, top_k=top_k)
     ]
-
     return PredictResponse(filename=file.filename, predictions=predictions)

@@ -56,6 +56,14 @@ def test_fit_saves_checkpoints_history_and_tensorboard_logs(config: TrainConfig)
     assert {"train_loss", "val_loss", "val_accuracy", "val_macro_f1", "lr"} <= history[0].keys()
     assert list(config.run_log_dir.glob("events.out.tfevents.*"))
 
+    saved_summary = json.loads((run_dir / "summary.json").read_text())
+    assert saved_summary["hardware"]["device"] == "cpu"
+    assert saved_summary["training_seconds"] == pytest.approx(
+        sum(row["seconds"] for row in history), abs=0.2
+    )
+    best_row = history[summary["best_epoch"] - 1]
+    assert saved_summary["best_val_metrics"]["macro_f1"] == best_row["val_macro_f1"]
+
     best = torch.load(run_dir / "best.pt", weights_only=True)
     assert best["metadata"]["image_size"] == 32
     assert best["metadata"]["normalization"] == "food11"
@@ -94,6 +102,10 @@ def test_resume_continues_an_interrupted_run(
     history = json.loads((config.run_checkpoint_dir / "history.json").read_text())
     assert [row["epoch"] for row in history] == [1, 2, 3]
     assert summary["epochs_completed"] == 3
+    # Time of the epoch finished before the interruption is still counted.
+    assert summary["training_seconds"] == pytest.approx(
+        sum(row["seconds"] for row in history), abs=0.2
+    )
 
 
 def test_resume_rejects_changed_config(config: TrainConfig) -> None:
@@ -114,6 +126,22 @@ def test_early_stopping(config: TrainConfig, monkeypatch: pytest.MonkeyPatch) ->
     summary = trainer.fit(config, device="cpu")
     assert summary["stopped_early"]
     assert summary["epochs_completed"] == 3
+    assert summary["best_epoch"] == 1
+
+
+def test_disabled_early_stopping_runs_full_schedule(
+    config: TrainConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config.epochs = 5
+    config.early_stopping_patience = None
+    monkeypatch.setattr(
+        trainer,
+        "evaluate",
+        lambda *args, **kwargs: {"loss": 1.0, "accuracy": 0.5, "macro_f1": 0.5},
+    )
+    summary = trainer.fit(config, device="cpu")
+    assert not summary["stopped_early"]
+    assert summary["epochs_completed"] == 5
     assert summary["best_epoch"] == 1
 
 

@@ -17,6 +17,6 @@ weight_decay: 0.0005
 scheduler: onecycle
 label_smoothing: 0.1
 amp: true
-early_stopping_patience: 15
+early_stopping_patience: null  # OneCycle: always run the full schedule
 
 seed: 42

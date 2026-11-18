@@ -132,9 +132,9 @@ assert "torch" not in sys.modules
 
 def test_conflicting_preprocessing_is_rejected(exported) -> None:
     checkpoint, _, _ = exported
-    with pytest.raises(ValueError, match="image size conflicts"):
+    with pytest.raises(ValueError, match="conflicts with the checkpoint's training size"):
         load_export_model(checkpoint, 128, None)
-    with pytest.raises(ValueError, match="normalization conflicts"):
+    with pytest.raises(ValueError, match="Normalization 'imagenet' conflicts"):
         load_export_model(checkpoint, None, "imagenet")
 
 
@@ -143,7 +143,7 @@ def test_untagged_and_training_state_checkpoints(exported, tmp_path: Path) -> No
     weights = torch.load(checkpoint, weights_only=True)["model_state_dict"]
     raw_path = tmp_path / "raw.pt"
     torch.save(weights, raw_path)
-    with pytest.raises(ValueError, match="image-size"):
+    with pytest.raises(ValueError, match="no preprocessing metadata"):
         load_export_model(raw_path, None, None)
     _, metadata = load_export_model(raw_path, 128, "imagenet")
     assert metadata["normalization"] == "imagenet"
