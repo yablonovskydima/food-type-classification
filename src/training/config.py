@@ -34,8 +34,6 @@ class TrainConfig:
     label_smoothing: float = 0.1
     amp: bool = True
     grad_clip_norm: float | None = None
-    # None disables early stopping: the full schedule always runs, best.pt still keeps the best
-    # epoch. Use it with OneCycle, whose biggest gains come in the final low-LR epochs.
     early_stopping_patience: int | None = 15
 
     seed: int = 42

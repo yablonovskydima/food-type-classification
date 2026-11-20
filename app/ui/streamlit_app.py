@@ -1,14 +1,22 @@
 import hashlib
 import os
 import pickle
+import sys
 from pathlib import Path
 
 import streamlit as st
 
-from src.inference.images import MAX_IMAGE_MEGAPIXELS, MAX_UPLOAD_MB, decode_uploaded_image
-from src.inference.predictor import FoodPredictor
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.inference.images import (  # noqa: E402
+    MAX_IMAGE_MEGAPIXELS,
+    MAX_UPLOAD_MB,
+    decode_uploaded_image,
+)
+from src.inference.predictor import FoodPredictor  # noqa: E402
+
 LOAD_ERRORS = (OSError, ValueError, RuntimeError, pickle.UnpicklingError)
 
 
@@ -18,9 +26,6 @@ def load_predictor(
     checkpoint_version: tuple[int, int],
     device: str,
 ) -> FoodPredictor:
-    # checkpoint_version (mtime, size) is unused in the body on purpose: it is part of the
-    # cache key, so a retrained best.pt at the same path is loaded again. Do not prefix it
-    # with "_" — Streamlit excludes such parameters from the cache key.
     return FoodPredictor(
         checkpoint_path=checkpoint_path, device=None if device == "auto" else device
     )
@@ -31,7 +36,6 @@ def display_name(category: str) -> str:
 
 
 def find_checkpoints() -> dict[str, Path]:
-    # Every best.pt under CHECKPOINT_DIR (default checkpoints/); CHECKPOINT_PATH is listed first.
     checkpoint_dir = Path(os.getenv("CHECKPOINT_DIR", PROJECT_ROOT / "checkpoints")).expanduser()
     paths = []
     if env_checkpoint := os.getenv("CHECKPOINT_PATH"):
@@ -76,14 +80,13 @@ def describe_model(predictor: FoodPredictor) -> str:
 
 def main() -> None:
     st.set_page_config(page_title="Food Lens · Food-11", page_icon="🍽️", layout="wide")
-    st.title("Food Lens")
-    st.markdown("### A food photo. Eleven possibilities.")
+    st.title("Food Classifier")
     st.write("Upload a photo to explore the food categories the model recognises.")
 
     checkpoints = find_checkpoints()
     predictor = None
     with st.sidebar:
-        st.header("Food-11 demo")
+        st.header("Food classifier demo")
         st.caption("ResNet-18 · 11 food categories")
         checkpoint_label = st.selectbox(
             "Trained model", list(checkpoints), placeholder="No trained model found"
@@ -95,7 +98,6 @@ def main() -> None:
             try:
                 with st.spinner("Loading the model…"):
                     predictor = load_predictor(str(checkpoint), version, device)
-                # Input size and normalisation come from the checkpoint itself.
                 st.caption(describe_model(predictor))
             except LOAD_ERRORS as error:
                 st.error(f"The model could not be loaded.\n\nDetails: {error}")
@@ -120,7 +122,7 @@ def main() -> None:
         if uploaded is None:
             st.caption("Try a clear photo of one dish with the food filling the frame.")
             with result_column:
-                st.subheader("What could it be?")
+                st.subheader("Results")
                 st.write("Your predictions will appear here.")
             return
         content = uploaded.getvalue()
@@ -132,7 +134,7 @@ def main() -> None:
         st.image(image, width="stretch", alt="Uploaded food photo")
 
     with result_column:
-        st.subheader("What could it be?")
+        st.subheader("Results")
         top_k = st.radio(
             "Show predictions", [3, 5], horizontal=True, format_func=lambda k: f"Top {k}"
         )

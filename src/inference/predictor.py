@@ -24,12 +24,6 @@ def get_default_device() -> torch.device:
 
 
 class FoodPredictor:
-    """Top-k food predictions from a trained checkpoint (or an already built model).
-
-    Input size and normalisation are taken from the checkpoint metadata; explicit values are
-    only needed for checkpoints without metadata and must not contradict it.
-    """
-
     def __init__(
         self,
         checkpoint_path: str | Path | None = None,

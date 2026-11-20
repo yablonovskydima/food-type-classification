@@ -1,5 +1,3 @@
-"""Export a checkpoint, verify numerical parity, and benchmark CPU forward passes."""
-
 import hashlib
 import json
 import platform
@@ -25,7 +23,6 @@ def load_export_model(
     checkpoint_path: Path, image_size: int | None, normalization: str | None
 ) -> tuple[torch.nn.Module, dict[str, Any]]:
     state_dict, saved = load_checkpoint(checkpoint_path, map_location="cpu")
-    # Unlike the predictor, export never guesses: untagged checkpoints need explicit values.
     image_size, normalization = resolve_preprocessing(
         saved, image_size, normalization, require_metadata=True
     )

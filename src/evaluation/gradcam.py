@@ -1,5 +1,3 @@
-"""Grad-CAM for convolutional classifiers without modifying parameter gradients."""
-
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -11,7 +9,6 @@ def grad_cam(
     target_layer: nn.Module,
     class_index: int | None = None,
 ) -> torch.Tensor:
-    """Return a CPU heatmap aligned to the preprocessed image, with values in [0, 1]."""
     if inputs.ndim != 4 or inputs.shape[0] != 1:
         raise ValueError("Grad-CAM expects a single NCHW image")
     activations = []

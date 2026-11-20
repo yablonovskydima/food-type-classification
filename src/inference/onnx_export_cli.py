@@ -1,5 +1,3 @@
-"""Export a final Food-11 checkpoint with reproducible validation and CPU timings."""
-
 import argparse
 import sys
 from pathlib import Path

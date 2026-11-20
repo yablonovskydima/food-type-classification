@@ -113,7 +113,10 @@ almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
    stopping ended it at epoch 44 of 80 while the OneCycle LR was still ~0.07, before the
    annealing phase. Early stopping is now disabled for the scratch config; a full 80-epoch
    rerun (~32 min) is pending, then fill the README results
-9. ⬜ Train pretrained reference, compare curves
+9. ⬜ Train pretrained reference, compare curves (issue #9). Comparison is ready:
+   `uv run scripts/compare_runs.py` (`src/evaluation/compare.py`) writes
+   `reports/comparison/val_curves.png` and the README results rows; the pretrained run itself
+   (~12 min, `--config configs/resnet18_pretrained.yaml`) is still to be trained
 10. ⬜ Evaluation on the test split: accuracy, top-3, macro-F1, confusion matrix (`src/evaluation`)
 11. ⬜ Error analysis, Grad-CAM
 12. ⬜ Inference + API / demo (`src/inference`, `app/api`, `app/ui`): CLI and FastAPI checked
@@ -137,7 +140,7 @@ notebooks/           EDA (one committed notebook with outputs; reusable code goe
 docker/              container healthcheck + smoke test (Dockerfile, compose.yaml at the root;
                      images install CPU torch at the uv.lock versions, see the Dockerfile)
 scripts/             one-command utilities: download_data.py, prepare_data.py, compute_stats.py,
-                     train.py
+                     train.py, compare_runs.py
 src/
   data/              datasets, transforms, dataloaders (training + validation only), class balance
   models/            model factory
@@ -171,6 +174,7 @@ Rule of thumb: ML logic goes into `src/`; `app/` and `scripts/` only call it.
 
 ## Notes for agents
 
+- DO NOT WRITE UNNECESSARY COMMENTS
 - Do not change the decisions table above on your own; propose it in the PR description instead.
 - Do not download the dataset again or delete `data/` unless asked — use `--verify-only` to check it.
 - Do not touch `uv.lock` by hand.
