@@ -27,7 +27,6 @@ def mock_dataset_dir(tmp_path: Path) -> Path:
         for cls_name in CLASSES:
             cls_dir = tmp_path / split / cls_name
             cls_dir.mkdir(parents=True)
-            # Create 2 tiny dummy images per class
             for i in range(2):
                 img = Image.new("RGB", (32, 32), color=(i * 10, i * 20, i * 30))
                 img.save(cls_dir / f"img_{i}.jpg")
@@ -106,9 +105,6 @@ def test_get_dataset_split_helper(mock_dataset_dir: Path) -> None:
     eval_ds = get_dataset(mock_dataset_dir, split="evaluation")
     assert len(eval_ds) == NUM_CLASSES * 2
 
-    test_alias_ds = get_dataset(mock_dataset_dir, split="test")
-    assert len(test_alias_ds) == NUM_CLASSES * 2
-
 
 def test_create_dataloaders(mock_dataset_dir: Path) -> None:
     batch_size = 4
@@ -121,7 +117,6 @@ def test_create_dataloaders(mock_dataset_dir: Path) -> None:
         pin_memory=False,
     )
 
-    # The test split is never loaded for training.
     assert set(loaders.keys()) == {"training", "validation"}
 
     for loader in loaders.values():

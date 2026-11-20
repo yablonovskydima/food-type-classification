@@ -1,13 +1,4 @@
-"""Download the Food-11 dataset from Kaggle into data/raw and verify it.
-
-Kaggle credentials are read from the `.env` file in the project root
-(copy `.env.example` to `.env` and fill it in).
-
-Usage:
-    uv run scripts/download_data.py                 # download (skipped if already valid) + verify
-    uv run scripts/download_data.py --force         # delete and download again
-    uv run scripts/download_data.py --verify-only   # only check what is on disk
-"""
+"""Download Food-11 from Kaggle into data/raw and verify it."""
 
 import argparse
 import os
@@ -37,9 +28,7 @@ def load_credentials() -> None:
     has_token = bool(os.getenv("KAGGLE_API_TOKEN"))
     has_user_key = bool(os.getenv("KAGGLE_USERNAME") and os.getenv("KAGGLE_KEY"))
     kaggle_dir = Path.home() / ".kaggle"
-    has_kaggle_files = any(
-        (kaggle_dir / name).exists() for name in ("access_token", "kaggle.json")
-    )
+    has_kaggle_files = any((kaggle_dir / name).exists() for name in ("access_token", "kaggle.json"))
 
     if not (has_token or has_user_key or has_kaggle_files):
         sys.exit(

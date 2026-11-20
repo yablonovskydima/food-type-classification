@@ -26,6 +26,7 @@ def load_predictor(
     checkpoint_version: tuple[int, int],
     device: str,
 ) -> FoodPredictor:
+    # checkpoint_version is only part of the cache key (reloads a retrained best.pt); no "_" prefix.
     return FoodPredictor(
         checkpoint_path=checkpoint_path, device=None if device == "auto" else device
     )

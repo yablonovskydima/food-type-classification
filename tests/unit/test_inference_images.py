@@ -1,5 +1,3 @@
-"""Unit tests for decoding uploaded photos."""
-
 import io
 
 import pytest

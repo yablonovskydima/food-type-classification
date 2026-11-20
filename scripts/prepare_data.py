@@ -1,20 +1,4 @@
-"""Prepare Food-11 for training: data/raw/food11 -> data/processed/food11.
-
-Steps:
-    1. Remove exact duplicates (identical pixels). Food-11 has copies of the same
-       image in different splits, which leaks test images into training. A duplicate
-       is kept in the earliest split (training > validation > evaluation) and dropped
-       from the later ones; repeats inside one split keep only the first file.
-    2. Resize so the shorter side is `--size` px (default 256), keeping the aspect
-       ratio. Smaller images are never upscaled. Saved as JPEG.
-    3. Rename class folders to snake_case ("Dairy product" -> "dairy_product").
-
-The output folder is recreated on every run.
-
-Usage:
-    uv run scripts/prepare_data.py
-    uv run scripts/prepare_data.py --size 160 --workers 8
-"""
+"""Build data/processed from data/raw: remove duplicates, resize, rename classes."""
 
 import argparse
 import hashlib
@@ -134,8 +118,7 @@ def main() -> None:
         total = sum(1 for s, _, _ in images if s == split)
         kept_n = sum(1 for s, _, _ in kept if s == split)
         print(
-            f"  {split:<11} {kept_n:>5} kept, "
-            f"{removed[split]:>4} duplicates removed (of {total})"
+            f"  {split:<11} {kept_n:>5} kept, {removed[split]:>4} duplicates removed (of {total})"
         )
 
 

@@ -1,4 +1,3 @@
-import importlib.util
 import json
 from pathlib import Path
 
@@ -9,19 +8,10 @@ from PIL import Image
 
 from src.data.constants import CLASSES
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "train.py"
-
-
-def load_script():
-    spec = importlib.util.spec_from_file_location("train_script", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
 
 @pytest.fixture
-def train_script():
-    return load_script()
+def train_script(load_script):
+    return load_script("train")
 
 
 @pytest.fixture

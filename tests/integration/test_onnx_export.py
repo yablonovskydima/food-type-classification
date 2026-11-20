@@ -1,5 +1,3 @@
-"""Real ResNet-18 export checks using random weights, never the Food-11 test set."""
-
 import json
 import subprocess
 import sys
@@ -13,7 +11,6 @@ from PIL import Image
 from src.data.constants import CLASSES, FOOD11_MEAN, FOOD11_STD
 from src.data.transforms import get_eval_transforms
 from src.inference.onnx_export import export_checkpoint, load_export_model
-from src.inference.onnx_export_cli import main
 from src.inference.onnx_predictor import OnnxFoodPredictor
 from src.models import build_model
 
@@ -107,8 +104,12 @@ class BlockTorch(importlib.abc.MetaPathFinder):
         if fullname.split(".")[0] in {"torch", "torchvision"}:
             raise RuntimeError("PyTorch must not be imported by ONNX inference")
 sys.meta_path.insert(0, BlockTorch())
-from src.inference.onnx_predictor import main
-main(sys.argv[1:])
+import runpy
+sys.argv = ["predict.py", *sys.argv[1:]]
+try:
+    runpy.run_path("scripts/predict.py", run_name="__main__")
+except SystemExit as exit_:
+    assert exit_.code == 0, exit_.code
 assert "torch" not in sys.modules
 """
     result = subprocess.run(
@@ -120,6 +121,7 @@ assert "torch" not in sys.modules
             str(output / "model.onnx"),
             "--image",
             str(photo),
+            "--json",
         ],
         cwd=Path(__file__).resolve().parents[2],
         capture_output=True,
@@ -127,7 +129,7 @@ assert "torch" not in sys.modules
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
-    assert len(json.loads(result.stdout)) == 3
+    assert len(json.loads(result.stdout)["dish.png"]) == 3
 
 
 def test_conflicting_preprocessing_is_rejected(exported) -> None:
@@ -186,7 +188,8 @@ def test_invalid_runtime_inputs(exported) -> None:
             predictor.predict_logits(invalid)
 
 
-def test_export_cli_reports_missing_checkpoint(tmp_path: Path, capsys) -> None:
+def test_export_cli_reports_missing_checkpoint(tmp_path: Path, capsys, load_script) -> None:
+    main = load_script("export_onnx").main
     assert (
         main(
             ["--checkpoint", str(tmp_path / "missing.pt"), "--output-dir", str(tmp_path / "export")]

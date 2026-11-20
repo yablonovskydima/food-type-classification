@@ -1,4 +1,3 @@
-import argparse
 import json
 from pathlib import Path
 
@@ -67,7 +66,6 @@ class OnnxFoodPredictor:
             raise ValueError("ONNX input/output contract does not match Food-11 metadata")
 
     def preprocess(self, image: Image.Image) -> np.ndarray:
-        """Match PIL-backed torchvision Resize + CenterCrop + ToTensor + Normalize."""
         image = image.convert("RGB")
         width, height = image.size
         shorter = self.metadata["resize_size"]
@@ -117,19 +115,3 @@ class OnnxFoodPredictor:
             }
             for index in indices
         ]
-
-
-def main(args: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Predict food categories on CPU without PyTorch")
-    parser.add_argument("--model", type=Path, required=True)
-    parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--top-k", type=int, choices=range(1, 12), default=3)
-    parser.add_argument("--threads", type=int, default=1)
-    options = parser.parse_args(args)
-    predictor = OnnxFoodPredictor(options.model, threads=options.threads)
-    print(json.dumps(predictor.predict_image(options.image, options.top_k), indent=2))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

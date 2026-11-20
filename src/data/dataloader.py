@@ -50,8 +50,6 @@ def create_dataloaders(
 
     train_dataset = get_dataset(data_dir=data_dir, split="training", transform=train_transform)
     val_dataset = get_dataset(data_dir=data_dir, split="validation", transform=eval_transform)
-    # The test split ("evaluation") is deliberately not loaded here: training must never see
-    # it. Final test evaluation goes through src.evaluation.
 
     sampler = (
         weighted_sampler(train_dataset.targets, seed=seed)

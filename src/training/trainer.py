@@ -307,7 +307,6 @@ def fit(
         },
         "epochs_completed": len(history),
         "stopped_early": stopped_early,
-        # Sum of per-epoch times, so it stays correct across resumed runs.
         "training_seconds": round(sum(row["seconds"] for row in history), 1),
         "hardware": hardware_info(torch_device),
         "precision": str(amp_dtype).removeprefix("torch.") if amp else "float32",

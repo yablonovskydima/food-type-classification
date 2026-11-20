@@ -48,7 +48,6 @@ def test_class_weights_are_inverse_frequency_with_mean_one() -> None:
     weights = class_weights(IMBALANCED_TARGETS)
     assert weights.shape == (NUM_CLASSES,)
     assert weights.mean().item() == pytest.approx(1.0)
-    # Rarest class (1 image) weighs 11x more than the most frequent one (11 images).
     assert (weights[0] / weights[-1]).item() == pytest.approx(11.0)
     assert torch.all(weights[:-1] > weights[1:])
 

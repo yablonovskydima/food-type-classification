@@ -9,7 +9,6 @@ from PIL import Image
 from torch import nn
 
 from src.data.constants import CLASSES, NUM_CLASSES
-from src.evaluation.cli import main, parse_args
 from src.evaluation.gradcam import grad_cam
 from src.evaluation.metrics import compute_metrics
 from src.evaluation.pipeline import evaluate_checkpoint
@@ -111,9 +110,9 @@ class TinyClassifier(nn.Module):
 
 
 def test_evaluation_cli_writes_complete_reports_without_other_splits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, load_script
 ) -> None:
-    # Real checkpoint loading and ImageFolder traversal; no real images, GPU, or downloads.
+    main = load_script("evaluate").main
     monkeypatch.setattr("src.inference.predictor.build_model", lambda **kwargs: TinyClassifier())
     data_dir = tmp_path / "data"
     for name in CLASSES:
@@ -177,12 +176,17 @@ def test_evaluation_cli_writes_complete_reports_without_other_splits(
         evaluate_checkpoint(checkpoint, data_dir, output)
 
 
-def test_cli_defaults_to_validation_split(tmp_path: Path) -> None:
+def test_cli_defaults_to_validation_split(tmp_path: Path, load_script) -> None:
+    parse_args = load_script("evaluate").parse_args
     options = parse_args(["--checkpoint", "model.pt", "--output-dir", str(tmp_path)])
     assert options.split == "validation"
 
 
-def test_cli_requires_checkpoint_and_reports_missing_file(tmp_path: Path, capsys) -> None:
+def test_cli_requires_checkpoint_and_reports_missing_file(
+    tmp_path: Path, capsys, load_script
+) -> None:
+    script = load_script("evaluate")
+    parse_args, main = script.parse_args, script.main
     with pytest.raises(SystemExit):
         parse_args(["--output-dir", str(tmp_path)])
     assert (

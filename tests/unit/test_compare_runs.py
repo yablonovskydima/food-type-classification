@@ -1,5 +1,4 @@
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 
@@ -7,8 +6,6 @@ import pytest
 from PIL import Image
 
 from src.evaluation.compare import compare_runs, find_validation_report, load_run
-
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "compare_runs.py"
 
 
 def write_run(
@@ -111,10 +108,8 @@ def test_needs_at_least_two_runs(two_runs: Path) -> None:
         compare_runs({"scratch": "x"}, checkpoint_dir=two_runs / "checkpoints")
 
 
-def test_script_reports_missing_run(tmp_path: Path, capsys) -> None:
-    spec = importlib.util.spec_from_file_location("compare_runs_script", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+def test_script_reports_missing_run(load_script, tmp_path: Path, capsys) -> None:
+    module = load_script("compare_runs")
     args = ["--run", "missing_a", "--run", "missing_b", "--output-dir", str(tmp_path)]
     assert module.main(args) == 1
     assert "No finished run for 'missing_a'" in capsys.readouterr().err

@@ -5,8 +5,7 @@ WORKDIR /build
 COPY pyproject.toml uv.lock ./
 RUN uv export --locked --extra app --no-dev --no-emit-project --no-hashes \
     --output-file /tmp/constraints.txt > /dev/null
-# Install only what the API and demo import. CPU wheels keep CUDA libraries out of the image;
-# all package versions still come from the project's lock, including transitive constraints.
+
 RUN python - <<'PY'
 import tomllib
 from pathlib import Path

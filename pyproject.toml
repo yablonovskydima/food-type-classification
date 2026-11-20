@@ -31,11 +31,9 @@ app = [
     "onnxruntime",
     "onnxscript>=0.7.2",
 ]
-dev = ["pytest", "ruff", "pre-commit", "jupyter"]
+dev = ["pytest", "ruff", "jupyter"]
 
-# On Windows install the CUDA build of PyTorch (the PyPI wheel is CPU-only there).
-# It needs an NVIDIA driver with CUDA 13.2+ and still runs on machines without a GPU.
-# Linux (CI) and macOS keep the default PyPI wheels.
+# CUDA build of PyTorch on Windows (PyPI only has CPU wheels there).
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
 torchvision = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]

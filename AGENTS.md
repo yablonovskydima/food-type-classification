@@ -1,183 +1,117 @@
 # AGENTS.md
 
 Shared context for AI coding agents (and humans) working on this repository.
-Read it before making changes. If something here is out of date, update this file in the same PR.
-
----
+Read it before making changes. If something here is out of date, update it in the same PR.
 
 ## What we are building
 
-An **image classifier** that predicts which of the **11 food categories** a photo belongs to.
-It is a university project; the goal is to show the full ML workflow end to end and to be able to
-demonstrate training to the supervisor.
+An image classifier that predicts which of the **11 food categories** a photo belongs to — a
+university project that shows the full ML workflow end to end.
 
-- Task: **single-label image classification**. Not object detection — the dataset has no bounding boxes.
-- Dataset: [Food-11](https://www.kaggle.com/datasets/trolukovich/food11-image-dataset) (MMSPG, EPFL).
-- Main model: **ResNet-18 from `torchvision`, trained from scratch** (`weights=None`).
-- Reference model: the same ResNet-18 with ImageNet weights, used **only for comparison**
-  to show what pretraining adds.
+- Task: single-label image classification (no detection: the dataset has no boxes).
+- Dataset: [Food-11](https://www.kaggle.com/datasets/trolukovich/food11-image-dataset).
+- Main model: ResNet-18 from `torchvision`, **trained from scratch**.
+- Reference model: the same ResNet-18 with ImageNet weights, only for comparison.
 
-## Decisions already made — do not change without discussing with the team
+## Decisions — do not change without discussing with the team
 
 | Decision | Reason |
 |----------|--------|
-| PyTorch + torchvision | `resnet18` is available out of the box; we write our own training loop so every step is visible. |
-| ResNet-18, from scratch | Small enough (~11M params) to train on ~10k images; residual blocks + BatchNorm make training from random init stable. Bigger models / ViT would overfit. |
-| No YOLO, no timm, no TensorFlow/Keras | Out of scope; keep one stack. |
-| Classification only | Food-11 has one label per image and no boxes. |
-| Train on `data/processed`, never on `data/raw` | Processed data is deduplicated and resized (see below). |
-| `evaluation` split is the test set, used once per final model | Never tune hyper-parameters or pick checkpoints on it — use `validation`. |
-| Macro-F1 reported next to accuracy | Classes are imbalanced (Rice ~280 vs Dessert/Soup ~1,500 training images). |
-| Class imbalance handled in training (weighted loss or `WeightedRandomSampler`) | Not by copying files on disk. |
-| Augmentation and normalisation happen on the fly in transforms | Not baked into `data/processed`. |
+| PyTorch + torchvision, own training loop | Every training step is visible. |
+| ResNet-18 from scratch | ~11M params fits ~10k images; bigger models overfit. |
+| No YOLO, timm, TensorFlow/Keras | Out of scope; one stack. |
+| Train on `data/processed`, never `data/raw` | Processed data is deduplicated and resized. |
+| `evaluation` split = test set, used once per final model | Tune and pick checkpoints on `validation` only. |
+| Macro-F1 next to accuracy | Classes are imbalanced (Rice ~280 vs Dessert/Soup ~1,500). |
+| Imbalance handled in training (weighted loss or sampler) | Not by copying files on disk. |
+| Augmentation and normalisation on the fly | Not baked into `data/processed`. |
 
-## Data pipeline
+## How it works
 
-```
-Kaggle ──download_data.py──▶ data/raw/food11 ──prepare_data.py──▶ data/processed/food11 ──▶ training
-```
-
-1. `uv run scripts/download_data.py` — downloads Food-11 into `data/raw/food11/{training,validation,evaluation}/<Class>/`
-   and checks the image counts (9,866 / 3,430 / 3,347). Kaggle credentials come from `.env`
-   (`KAGGLE_API_TOKEN`, see `.env.example`).
-2. `uv run scripts/prepare_data.py` — builds `data/processed/food11/`:
-   - **removes duplicates** by pixel hash. Food-11 contains ~630 duplicates, mostly across splits
-     (564 test images also appear in training or validation). A duplicate is kept only in the earliest
-     split, priority `training > validation > evaluation`;
-   - **resizes** so the shorter side is 256 px (aspect ratio kept, no upscaling), JPEG quality 95;
-   - **renames classes to snake_case**: `bread, dairy_product, dessert, egg, fried_food, meat,
-     noodles_pasta, rice, seafood, soup, vegetable_fruit`.
-
-   Result: 9,856 / 3,374 / 2,783 images. The folder is recreated on every run.
-
-Facts about the raw data (checked): all images are RGB JPEGs, none corrupted, median 512×512,
-almost all have a shorter side ≥ 224 px. Total ~1.2 GB raw, ~540 MB processed.
-
-## Training setup (planned defaults)
-
-- Input size 128 or 224 px; `RandomResizedCrop`, `RandomHorizontalFlip`, `ColorJitter`,
-  `RandAugment`, `RandomErasing` for training; `Resize` + `CenterCrop` for validation/test.
-- Normalisation with mean/std computed over all pixels of the processed training split
-  (`FOOD11_MEAN` / `FOOD11_STD` in `src/data/constants.py`, recompute with
-  `uv run scripts/compute_stats.py` after rebuilding `data/processed`). The pretrained
-  reference model uses ImageNet statistics instead.
-- SGD (momentum 0.9) or AdamW, OneCycle / cosine LR schedule, 60–100 epochs for the scratch model.
-- Label smoothing 0.1, weight decay 5e-4, mixed precision (AMP). Early stopping on validation
-  macro-F1 is optional (`early_stopping_patience`, `null` disables it): off for the OneCycle
-  scratch run, which must reach its final low-LR epochs; on for the cosine pretrained run.
-  `best.pt` always keeps the best epoch either way.
-- Class imbalance: `imbalance` option of `create_dataloaders` / `build_criterion`
-  (`src/data/class_balance.py`, `src/training/losses.py`). Default `weighted_loss`
-  (inverse-frequency class weights from the training split); `weighted_sampler` balances batches
-  instead. Never use both at once — pass the same strategy to both functions.
-- Experiment settings live in YAML configs (`configs/*.yaml`, loaded into `TrainConfig` in
-  `src/training/config.py`; unknown keys are rejected), not in code. Fix all random seeds.
-- Train with `uv run scripts/train.py [--config configs/<experiment>.yaml] [--resume]`: checks
-  data and GPU, trains via `src.training.cli`'s `fit()`, then evaluates `best.pt` on the
-  validation split into `reports/<experiment>/validation/` (never the test split).
-  Mixed precision uses bfloat16 when the GPU supports it (float16 + GradScaler otherwise);
-  validation runs in float32. DataLoader workers are persistent (Windows restarts are slow).
-  Validation runs after every epoch; `checkpoints/<experiment>/best.pt` (weights + metadata:
-  image size, normalisation, epoch, val metrics) is the model for evaluation/inference,
-  `last.pt` is the full state for `--resume`, `history.json` holds per-epoch metrics.
-  Resuming requires the same config; an existing run is never overwritten.
-  `summary.json` records best epoch/metrics, total training time, precision and hardware.
-- On Windows `uv` installs the CUDA 13.2 build of PyTorch (`[tool.uv.sources]` in
-  `pyproject.toml`); Linux/macOS use the PyPI wheels.
-- Logging to TensorBoard (`runs/<experiment>`), checkpoints to `checkpoints/` — both git-ignored.
-
-## Using trained models
-
-- All checkpoint loading goes through `src/inference/checkpoints.py` (`load_checkpoint`,
-  `resolve_preprocessing`). Input size and normalisation are read from the checkpoint metadata,
-  so evaluation, the inference CLI, the API, the demo and ONNX export never need them as
-  arguments; explicit values are only for checkpoints without metadata and must not conflict.
-- The default model is `checkpoints/resnet18_scratch/best.pt` (`DEFAULT_CHECKPOINT`). The CLI
-  and API require a trained checkpoint and never fall back to random or ImageNet-only weights
-  (an ImageNet backbone with an untrained 11-class head gives meaningless predictions).
-- Uploaded photos (API, demo) are decoded with `src/inference/images.py`
-  (`decode_uploaded_image`: format/size checks, EXIF orientation).
+- **Data:** `download_data.py` → `data/raw/food11` (9,866 / 3,430 / 3,347).
+  `prepare_data.py` → `data/processed/food11`: removes ~630 pixel-identical duplicates (564 test
+  images also appeared in training/validation; a duplicate stays in the earliest split), resizes
+  the shorter side to 256 px, renames classes to snake_case. Result: 9,856 / 3,374 / 2,783.
+- **Normalisation:** `FOOD11_MEAN/STD` in `src/data/constants.py` (recompute with
+  `compute_stats.py` after rebuilding the data); the pretrained model uses ImageNet statistics.
+- **Training:** experiments are YAML files in `configs/` loaded into `TrainConfig` (unknown keys
+  are rejected). `scripts/train.py` checks data and GPU, runs `fit()` from `src/training/trainer.py`,
+  then evaluates `best.pt` on the validation split. Validation runs every epoch; bfloat16 AMP on
+  GPUs that support it; persistent DataLoader workers. Scratch: SGD + OneCycle, 80 epochs, early
+  stopping off (`early_stopping_patience: null`) so the low-LR phase is reached. Pretrained:
+  AdamW + cosine, 25 epochs, patience 7.
+- **Imbalance:** the same `imbalance` value goes to `create_dataloaders` and `build_criterion`;
+  default `weighted_loss`. Never combine loss weights and the sampler.
+- **Run outputs** (git-ignored): `checkpoints/<experiment>/` — `best.pt` (weights + metadata:
+  image size, normalisation, epoch, val metrics), `last.pt` (for `--resume`), `history.json`,
+  `summary.json`; `runs/<experiment>/` TensorBoard; `reports/` evaluation and comparison output.
+  A run is never overwritten; resuming requires the same config.
+- **Using models:** all checkpoint loading goes through `src/inference/checkpoints.py`;
+  preprocessing comes from the checkpoint metadata, never from extra arguments. CLI, API and
+  demo require a trained checkpoint and never fall back to random or ImageNet-only weights.
+  Uploads are decoded with `src/inference/images.py`.
+- **Docker:** CPU images for API and demo (`Dockerfile`, `compose.yaml`); the checkpoint is
+  mounted read-only as `/models/best.pt`. Compose reads `MODEL_CHECKPOINT` and ports from `.env`.
+- **GPU:** on Windows `uv` installs the CUDA 13.2 PyTorch build (`[tool.uv.sources]`).
 
 ## Plan and status
 
-1. ✅ Project setup, folder structure
-2. ✅ Dataset download script
-3. ✅ Dataset processing script (dedup, resize, rename)
-4. ✅ EDA notebook (class distribution, examples, mean/std)
-5. ✅ Dataset / transforms / DataLoaders (`src/data`), class-imbalance handling (issue #5);
-   comparing weighted loss vs sampler by per-class recall needs the training loop
-6. ✅ Model factory: ResNet-18 scratch / pretrained (`src/models`)
-7. ✅ Training loop with configs, AMP, checkpoints, TensorBoard (`src/training`, issue #7)
-8. ⬜ Train ResNet-18 from scratch — **main experiment** (pipeline: `scripts/train.py`, issue #8).
-   First run (RTX 3050, 17 min): val macro-F1 0.720 / accuracy 0.710 at epoch 29, but early
-   stopping ended it at epoch 44 of 80 while the OneCycle LR was still ~0.07, before the
-   annealing phase. Early stopping is now disabled for the scratch config; a full 80-epoch
-   rerun (~32 min) is pending, then fill the README results
-9. ⬜ Train pretrained reference, compare curves (issue #9). Comparison is ready:
-   `uv run scripts/compare_runs.py` (`src/evaluation/compare.py`) writes
-   `reports/comparison/val_curves.png` and the README results rows; the pretrained run itself
-   (~12 min, `--config configs/resnet18_pretrained.yaml`) is still to be trained
-10. ⬜ Evaluation on the test split: accuracy, top-3, macro-F1, confusion matrix (`src/evaluation`)
-11. ⬜ Error analysis, Grad-CAM
-12. ⬜ Inference + API / demo (`src/inference`, `app/api`, `app/ui`): CLI and FastAPI checked
-    with the first trained checkpoint; Streamlit demo (issue #22) still to be tried by hand
-13. ✅ ONNX export, parity checks, CPU benchmarks and PyTorch-free inference (issue #12,
-    `src/inference/onnx_*`); final-model export awaits a trained checkpoint
-14. ✅ Docker CPU images for API and Streamlit, Compose, healthchecks and real-container
-    smoke tests (issue #14); the trained `best.pt` is mounted read-only at runtime;
-    still to be run with the final trained checkpoint
+1. ✅ Setup, dataset download, processing, EDA notebook
+2. ✅ Data pipeline and class-imbalance handling (#4, #5); loss vs sampler comparison not run yet
+3. ✅ Model factory (#6), training loop (#7)
+4. ✅ Train ResNet-18 from scratch (#8) — first run early-stopped at epoch 44/80 (val macro-F1
+   0.720); full 80-epoch rerun pending, then fill the README results
+5. ✅ Pretrained reference (#9) — val macro-F1 0.917, accuracy 0.915; comparison chart via
+   `compare_runs.py`
+6. ⬜ Final test-split evaluation and error analysis (confusion matrix, Grad-CAM) for both models
+7. ✅ Inference CLI, FastAPI, Streamlit demo (#11, #13, #22), checked with trained checkpoints
+8. ✅ ONNX export (#12) — not used by the API/demo yet
+9. ✅ Docker images, Compose, smoke tests (#14)
 
 Tasks are tracked as GitHub issues; reference the issue in the PR.
 
 ## Repository layout
 
 ```
-.github/workflows/   CI
-configs/             experiment configs (YAML)
-app/api/             inference API (FastAPI) — depends on src, never the other way round
-app/ui/              Streamlit demo using the local inference engine (issue #22)
-notebooks/           EDA (one committed notebook with outputs; reusable code goes to src/)
-docker/              container healthcheck + smoke test (Dockerfile, compose.yaml at the root;
-                     images install CPU torch at the uv.lock versions, see the Dockerfile)
-scripts/             one-command utilities: download_data.py, prepare_data.py, compute_stats.py,
-                     train.py, compare_runs.py
+configs/        experiment configs (YAML)
+scripts/        every user-facing command: download_data, prepare_data, compute_stats, train,
+                compare_runs, evaluate, predict, export_onnx
 src/
-  data/              datasets, transforms, dataloaders (training + validation only), class balance
-  models/            model factory
-  training/          training loop, losses, optimizers, schedulers, checkpoints
-  evaluation/        metrics, reports, confusion matrix, Grad-CAM
-  inference/         checkpoint loading, predictor + CLI, upload decoding, ONNX export/runtime
-tests/unit, tests/integration
-data/ checkpoints/ runs/ reports/   generated, git-ignored
+  data/         dataset, transforms, dataloaders (training + validation only), class balance
+  models/       ResNet-18 factory
+  training/     config, training loop, losses, optimisers/schedules, checkpoints
+  evaluation/   metrics, report figures, Grad-CAM, run comparison
+  inference/    checkpoint loading, predictor, upload decoding, ONNX export/runtime
+app/api/        FastAPI service
+app/ui/         Streamlit demo
+docker/         container healthcheck and smoke test (Dockerfile, compose.yaml at the root)
+notebooks/      EDA (one notebook with outputs)
+tests/          unit/ (fast, synthetic) and integration/ (training, ONNX, Streamlit)
 ```
 
-Rule of thumb: ML logic goes into `src/`; `app/` and `scripts/` only call it.
+ML logic lives in `src/`; `scripts/` and `app/` only call it. Every command is a script in
+`scripts/` run as `uv run scripts/<name>.py` — no `python -m src...` entry points.
 
-## Tooling and conventions
+## Conventions
 
-- Python **3.13**, dependencies managed with **uv** (`pyproject.toml` + `uv.lock`).
-  Run everything with `uv run ...`; add packages with `uv add <pkg>` so the lock file is updated.
-- Lint/format with **ruff** (line length 100). Run `uv run ruff check .` before committing.
-- Tests with **pytest** in `tests/`. Keep unit tests fast and independent of the real dataset.
-- Code, comments, docstrings, commit messages and docs in **English**.
-- Prefer small, readable functions and type hints; no notebooks-only logic — reusable code goes to `src/`.
+- Python 3.13, **uv** (`pyproject.toml` + `uv.lock`); add packages with `uv add`, never edit
+  `uv.lock` by hand.
+- **ruff** (line length 100) and **pytest**; tests must not need the real dataset or a GPU.
+- English in code, commit messages and docs. Small functions, type hints.
+- **No comments or docstrings unless something is genuinely non-obvious.**
+- User-facing docs: `README.md` (what the project is, results) and `USAGE.md` (commands only).
 
 ## Git workflow
 
-- `main` — stable, only updated from `dev`.
-- `dev` — integration branch.
-- Feature work happens on a separate branch per task and is merged into `dev` through a pull request.
+- `main` stable, updated only from `dev`; `dev` is the integration branch; one branch and PR
+  per task. PR descriptions: change, validation, related issue.
 - For each task, commit validated changes, push the feature branch, and open a PR targeting `dev`.
   If committing, pushing, or opening the PR is not possible, tell the user which step failed and why.
-- Keep PR descriptions brief: describe the change, validation, and related issue.
-- Never commit: `.env`, Kaggle tokens, anything in `data/`, `checkpoints/`, `runs/`, model weights (`*.pt`, `*.onnx`).
+- Never commit `.env`, tokens, `data/`, `checkpoints/`, `runs/`, `reports/`, weights.
 
 ## Notes for agents
 
-- DO NOT WRITE UNNECESSARY COMMENTS
-- Do not change the decisions table above on your own; propose it in the PR description instead.
-- Do not download the dataset again or delete `data/` unless asked — use `--verify-only` to check it.
-- Do not touch `uv.lock` by hand.
-- Long-running commands (training) should be started by a human; agents may run short smoke tests
-  (one epoch on a small subset).
-- When you finish a task, update the **Plan and status** section if it changed.
+- Do not change the decisions table on your own; propose it in the PR description.
+- Do not re-download the dataset or delete `data/` unless asked (`--verify-only` checks it).
+- Long-running commands (training) are started by a human; agents may run short smoke tests.
+- Update **Plan and status** when a task is done.

@@ -1,4 +1,3 @@
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -9,18 +8,6 @@ from src.data.constants import CLASSES, FOOD11_MEAN, FOOD11_STD, IMAGENET_MEAN, 
 from src.data.transforms import get_eval_transforms
 from src.inference.checkpoints import load_checkpoint, resolve_preprocessing
 from src.models import build_model
-
-
-def get_default_device() -> torch.device:
-    if torch.cuda.is_available():
-        try:
-            test_tensor = torch.zeros(1, 1, 3, 3, device="cuda")
-            weight = torch.zeros(1, 1, 3, 3, device="cuda")
-            torch.nn.functional.conv2d(test_tensor, weight)
-            return torch.device("cuda")
-        except Exception:
-            return torch.device("cpu")
-    return torch.device("cpu")
 
 
 class FoodPredictor:
@@ -34,7 +21,9 @@ class FoodPredictor:
     ) -> None:
         if (checkpoint_path is None) == (model is None):
             raise ValueError("Provide exactly one of checkpoint_path or model")
-        self.device = get_default_device() if device is None else torch.device(device)
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(device)
 
         self.metadata: dict[str, Any] = {}
         if checkpoint_path is not None:
@@ -80,20 +69,3 @@ class FoodPredictor:
             {"class": self.classes[idx], "probability": round(prob, 4), "index": idx}
             for prob, idx in zip(top_probs.tolist(), top_indices.tolist(), strict=True)
         ]
-
-    def predict_directory(
-        self,
-        directory_path: str | Path,
-        top_k: int = 3,
-        extensions: Sequence[str] = (".jpg", ".jpeg", ".png"),
-    ) -> dict[str, list[dict[str, Any]]]:
-        dir_path = Path(directory_path)
-        if not dir_path.is_dir():
-            raise NotADirectoryError(f"Directory not found: {dir_path}")
-
-        valid_exts = {ext.lower() for ext in extensions}
-        return {
-            file_path.name: self.predict_image(file_path, top_k=top_k)
-            for file_path in sorted(dir_path.iterdir())
-            if file_path.is_file() and file_path.suffix.lower() in valid_exts
-        }

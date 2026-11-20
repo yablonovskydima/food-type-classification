@@ -1,5 +1,3 @@
-"""Check API readiness with the standard library, without curl in the image."""
-
 import json
 import sys
 import urllib.request

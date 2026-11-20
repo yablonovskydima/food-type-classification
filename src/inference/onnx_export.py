@@ -109,7 +109,6 @@ def export_checkpoint(
     warmup: int = 5,
     iterations: int = 30,
 ) -> dict[str, Any]:
-    """Publish a self-contained model and report only after checker/parity succeed."""
     if threads < 1 or warmup < 1 or iterations < 1:
         raise ValueError("Threads, warmup and benchmark iterations must be positive")
     output_dir = Path(output_dir)

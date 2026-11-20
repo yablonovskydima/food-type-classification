@@ -32,7 +32,6 @@ def _file_sha256(path: Path) -> str:
 
 
 def find_validation_report(reports_dir: Path, best_checkpoint: Path) -> dict[str, Any] | None:
-    """Newest validation report of this experiment that was made from the current best.pt."""
     if not best_checkpoint.is_file():
         return None
     checkpoint_hash = _file_sha256(best_checkpoint)

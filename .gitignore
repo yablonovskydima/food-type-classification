@@ -10,9 +10,7 @@ venv/
 .idea/
 .vscode/
 
-data/**
-!data/**/
-!data/**/.gitkeep
+data/
 checkpoints/
 runs/
 *.pt
@@ -24,7 +22,4 @@ Thumbs.db
 
 kaggle.json
 .env
-.docker.env
-
-# Evaluation reports (copy final figures to docs/ if they should be versioned)
 reports/

@@ -1,5 +1,3 @@
-"""Build both targets, then run python docker/smoke_test.py (no host ML dependencies)."""
-
 import argparse
 import json
 import subprocess
@@ -30,8 +28,6 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="food-api-smoke-") as directory:
         temporary_root = Path(directory).resolve()
         assert temporary_root.parent == Path(tempfile.gettempdir()).resolve()
-        # TemporaryDirectory is 0700 on Linux. Mount a readable child, keeping
-        # the host-only parent private while allowing container UID 10001 access.
         root = temporary_root / "models"
         root.mkdir()
         root.chmod(0o755)
@@ -102,8 +98,6 @@ def main() -> None:
             docker("exec", name, "python", "docker/healthcheck.py")
             docker("exec", name, "python", "-c", "import os; assert os.getuid() != 0")
 
-            # Without a mounted checkpoint the API stays up, reports why and refuses to predict;
-            # the container healthcheck then fails, so `compose up --wait` does not succeed.
             docker("run", "-d", "--name", no_model_name, options.api_image)
             no_model_check = """
 import io, json, time, urllib.error, urllib.request
@@ -175,7 +169,6 @@ from streamlit.testing.v1 import AppTest
 at = AppTest.from_file("app/ui/streamlit_app.py", default_timeout=60).run()
 assert not at.exception
 assert at.selectbox[0].options == ["/models/best.pt"], at.selectbox[0].options
-# Input size and normalisation come from the checkpoint metadata, not from the UI.
 assert any("128 px" in caption.value for caption in at.sidebar.caption)
 at.file_uploader[0].upload("photo.png", Path("/models/photo.png").read_bytes(), "image/png").run()
 at.button[0].click().run()

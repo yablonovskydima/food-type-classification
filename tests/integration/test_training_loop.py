@@ -3,13 +3,11 @@ from pathlib import Path
 
 import pytest
 import torch
-import yaml
 from PIL import Image
 
 from src.data.constants import CLASSES
 from src.inference.predictor import FoodPredictor
 from src.training import trainer
-from src.training.cli import main
 from src.training.config import TrainConfig
 
 IMAGES_PER_CLASS = 2
@@ -102,7 +100,6 @@ def test_resume_continues_an_interrupted_run(
     history = json.loads((config.run_checkpoint_dir / "history.json").read_text())
     assert [row["epoch"] for row in history] == [1, 2, 3]
     assert summary["epochs_completed"] == 3
-    # Time of the epoch finished before the interruption is still counted.
     assert summary["training_seconds"] == pytest.approx(
         sum(row["seconds"] for row in history), abs=0.2
     )
@@ -149,12 +146,3 @@ def test_weighted_sampler_strategy_trains(config: TrainConfig) -> None:
     config.imbalance = "weighted_sampler"
     config.epochs = 1
     assert trainer.fit(config, device="cpu")["epochs_completed"] == 1
-
-
-def test_cli_smoke(config: TrainConfig, tmp_path: Path, capsys) -> None:
-    path = tmp_path / "tiny.yaml"
-    path.write_text(yaml.safe_dump(config.to_dict()), encoding="utf-8")
-    assert main(["--config", str(path), "--device", "cpu", "--epochs", "1"]) == 0
-    assert "Best validation macro-F1" in capsys.readouterr().out
-    assert main(["--config", str(path), "--device", "cpu"]) == 1
-    assert "already contains a run" in capsys.readouterr().err

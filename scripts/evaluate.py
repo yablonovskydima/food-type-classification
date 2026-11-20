@@ -1,26 +1,26 @@
+"""Evaluate a trained model on the validation split, or once on the test split."""
+
 import argparse
 import sys
 from pathlib import Path
 
-from src.evaluation.pipeline import evaluate_checkpoint
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from src.evaluation.pipeline import evaluate_checkpoint  # noqa: E402
 
 
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Evaluate a trained Food-11 checkpoint. Use test data once per final model."
-    )
+    parser = argparse.ArgumentParser(description="Evaluate a trained Food-11 checkpoint")
     parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--data-dir", type=Path, default=Path("data/processed/food11"))
-    parser.add_argument(
-        "--output-dir", type=Path, required=True, help="New or empty report directory"
-    )
+    parser.add_argument("--output-dir", type=Path, required=True, help="New or empty folder")
     parser.add_argument(
         "--split",
         choices=("validation", "evaluation"),
         default="validation",
-        help="'evaluation' is the held-out test set: run it once per final model",
+        help="'evaluation' is the test set: use it once per final model",
     )
-    # Preprocessing is read from the checkpoint; these are only for checkpoints without metadata.
+    parser.add_argument("--data-dir", type=Path, default=ROOT / "data" / "processed" / "food11")
     parser.add_argument(
         "--image-size", type=int, default=None, help="Only for checkpoints without metadata"
     )
@@ -30,12 +30,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         const=True,
         default=None,
         dest="use_imagenet_stats",
-        help="Only for checkpoints without metadata: use ImageNet normalisation",
+        help="Only for checkpoints without metadata",
     )
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", choices=("cpu", "cuda"), default=None)
-    parser.add_argument("--gradcam-examples", type=int, default=8, help="Set 0 to disable Grad-CAM")
+    parser.add_argument("--gradcam-examples", type=int, default=8, help="0 disables Grad-CAM")
     return parser.parse_args(args)
 
 

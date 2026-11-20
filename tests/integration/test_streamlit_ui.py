@@ -112,7 +112,6 @@ def test_preprocessing_comes_from_the_checkpoint(
 ) -> None:
     add_checkpoint(checkpoint_dir)
     app = make_app()
-    # Only model and device are selectable; size and normalisation are shown, not chosen.
     assert [box.label for box in app.selectbox] == ["Trained model", "Device"]
     description = " ".join(caption.value for caption in app.sidebar.caption)
     assert "224 px" in description and "food11" in description

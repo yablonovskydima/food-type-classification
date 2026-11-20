@@ -1,20 +1,4 @@
-"""Train a Food-11 model and evaluate it on the validation split in one command.
-
-Steps:
-    1. Check that data/processed/food11 exists and a CUDA GPU is available.
-    2. Train with the given YAML config (validation after every epoch, early stopping,
-       TensorBoard logs in runs/<experiment>/).
-    3. Evaluate the best checkpoint on the validation split: metrics, confusion matrices
-       and Grad-CAM in reports/<experiment>/validation/.
-    4. Print the results to copy into the README (best epoch, metrics, time, hardware).
-
-The held-out test split is never used here; evaluate the final model on it separately.
-
-Usage:
-    uv run scripts/train.py                                            # main experiment
-    uv run scripts/train.py --config configs/resnet18_pretrained.yaml  # pretrained reference
-    uv run scripts/train.py --resume                                   # continue after a stop
-"""
+"""Train a model from a YAML config and evaluate it on the validation split."""
 
 import argparse
 import os
@@ -76,7 +60,6 @@ def choose_device(allow_cpu: bool) -> str:
 
 
 def report_dir(config: TrainConfig) -> Path:
-    # Evaluation refuses non-empty folders, so a re-run gets a timestamped folder.
     base = Path("reports") / config.experiment
     target = base / "validation"
     if target.exists() and any(target.iterdir()):

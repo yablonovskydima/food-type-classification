@@ -1,3 +1,5 @@
+"""Compute the RGB mean/std of the processed training split for normalisation."""
+
 import argparse
 import sys
 from pathlib import Path

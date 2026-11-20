@@ -7,7 +7,6 @@ from src.data.constants import CLASS_TO_IDX, CLASSES
 
 
 class Food11Dataset(ImageFolder):
-
     def __init__(
         self,
         root: str | Path,
@@ -40,6 +39,4 @@ def get_dataset(
     split: str = "training",
     transform: Callable | None = None,
 ) -> Food11Dataset:
-    normalized_split = "evaluation" if split == "test" else split
-    split_dir = Path(data_dir) / normalized_split
-    return Food11Dataset(root=split_dir, transform=transform)
+    return Food11Dataset(root=Path(data_dir) / split, transform=transform)

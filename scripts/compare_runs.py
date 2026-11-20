@@ -1,13 +1,4 @@
-"""Compare the from-scratch and ImageNet-pretrained runs on one chart.
-
-Reads checkpoints/<experiment>/history.json and summary.json (written by scripts/train.py) and
-writes reports/comparison/val_curves.png (validation accuracy, macro-F1 and loss per epoch for
-both models) and reports/comparison/results.md (the README results table rows).
-
-Usage:
-    uv run scripts/compare_runs.py
-    uv run scripts/compare_runs.py --run resnet18_scratch="From scratch" --run my_run="My run"
-"""
+"""Plot validation curves of several runs on one chart and write the results table."""
 
 import argparse
 import os

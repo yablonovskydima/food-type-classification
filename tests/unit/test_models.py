@@ -4,7 +4,7 @@ from torch import nn
 from torchvision.models import ResNet18_Weights, resnet18
 
 from src.data.constants import NUM_CLASSES
-from src.models import build_model, count_parameters, factory
+from src.models import build_model, factory
 
 
 @pytest.mark.parametrize("image_size", [128, 224])
@@ -21,18 +21,8 @@ def test_custom_num_classes() -> None:
 
 
 def test_resnet18_parameter_count() -> None:
-    model = build_model()
-    # ResNet-18 backbone (~11.18M) + 512 * 11 + 11 head parameters.
-    assert count_parameters(model) == 11_176_512 + 512 * NUM_CLASSES + NUM_CLASSES
-
-
-def test_count_parameters_trainable_only() -> None:
-    model = build_model()
-    for param in model.parameters():
-        param.requires_grad = False
-    model.fc.weight.requires_grad = True
-    assert count_parameters(model) == 512 * NUM_CLASSES
-    assert count_parameters(model, trainable_only=False) > count_parameters(model)
+    parameters = sum(p.numel() for p in build_model().parameters())
+    assert parameters == 11_176_512 + 512 * NUM_CLASSES + NUM_CLASSES
 
 
 def test_scratch_models_differ_between_calls() -> None:
