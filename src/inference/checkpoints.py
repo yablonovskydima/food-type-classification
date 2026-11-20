@@ -12,12 +12,6 @@ NORMALIZATIONS = ("food11", "imagenet")
 def load_checkpoint(
     path: str | Path, map_location: str | torch.device = "cpu"
 ) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
-    """Load model weights and their metadata from any checkpoint the project produces.
-
-    Supports best.pt (weights + inference metadata), last.pt (weights + training config),
-    {"state_dict": ...} wrappers and raw state dicts. The returned metadata always has
-    "image_size" and "normalization" keys, which are None when the checkpoint does not say.
-    """
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"Checkpoint file not found: {path}")
@@ -53,11 +47,6 @@ def resolve_preprocessing(
     *,
     require_metadata: bool = False,
 ) -> tuple[int, str]:
-    """Combine saved preprocessing with optional explicit values; conflicts are errors.
-
-    Without saved values or overrides, falls back to 224 px / Food-11 statistics unless
-    require_metadata is set.
-    """
     saved_size, saved_normalization = metadata.get("image_size"), metadata.get("normalization")
     if image_size is not None and saved_size is not None and image_size != saved_size:
         raise ValueError(

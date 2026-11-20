@@ -20,8 +20,6 @@ def checkpoint_path() -> Path:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Serve only trained weights; without a checkpoint /predict answers 503 instead of
-    # returning predictions from a random model.
     global predictor, load_error
     try:
         predictor, load_error = FoodPredictor(checkpoint_path=checkpoint_path()), None

@@ -1,5 +1,3 @@
-"""CPU image inference using only ONNX Runtime, NumPy, and Pillow."""
-
 import argparse
 import json
 from pathlib import Path

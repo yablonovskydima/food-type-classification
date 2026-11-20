@@ -68,8 +68,6 @@ def create_dataloaders(
             num_workers=num_workers,
             pin_memory=pin_memory,
             drop_last=drop_last_train,
-            # Keep workers alive between epochs: on Windows each restart re-imports PyTorch
-            # in every worker, which costs tens of seconds per epoch.
             persistent_workers=num_workers > 0,
         ),
         "validation": DataLoader(

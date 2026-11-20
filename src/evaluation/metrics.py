@@ -1,5 +1,3 @@
-"""Classification metrics with a stable class order and explicit undefined AUCs."""
-
 from collections.abc import Sequence
 from typing import Any
 
@@ -16,7 +14,6 @@ from sklearn.metrics import (
 def compute_metrics(
     targets: np.ndarray, probabilities: np.ndarray, classes: Sequence[str]
 ) -> dict[str, Any]:
-    """Compute one-vs-rest AUC; return None when a class lacks positives or negatives."""
     targets = np.asarray(targets)
     probabilities = np.asarray(probabilities)
     num_classes = len(classes)

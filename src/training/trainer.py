@@ -105,8 +105,6 @@ def train_one_epoch(
         scale_before = scaler.get_scale()
         scaler.step(optimizer)
         scaler.update()
-        # With AMP the scaler skips steps whose gradients overflowed (and lowers the scale);
-        # advance the LR schedule only when the optimizer actually stepped.
         if scaler.get_scale() >= scale_before:
             scheduler.step()
 
@@ -131,8 +129,6 @@ def evaluate(
     *,
     limit_batches: int | None = None,
 ) -> dict[str, float]:
-    # Full float32: validation is cheap, and half-precision logits can overflow to inf/NaN
-    # early in training, which would corrupt the validation loss.
     model.eval()
     criterion = nn.CrossEntropyLoss(reduction="sum")
     loss_sum, labels, preds = 0.0, [], []
@@ -165,8 +161,6 @@ def fit(
     seed_everything(config.seed)
     torch_device = resolve_device(device)
     amp = config.amp and torch_device.type == "cuda"
-    # bfloat16 has the float32 range, so activations cannot overflow and no loss scaling is
-    # needed; GPUs without bf16 support fall back to float16 with a GradScaler.
     amp_dtype = (
         torch.bfloat16
         if amp and torch.cuda.is_bf16_supported(including_emulation=False)
@@ -224,7 +218,6 @@ def fit(
     try:
         for epoch in range(start_epoch, config.epochs + 1):
             if config.should_stop_early(epochs_without_improvement):
-                # Only reachable when resuming a run that had already stopped early.
                 stopped_early = True
                 break
             started = time.perf_counter()

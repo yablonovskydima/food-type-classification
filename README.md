@@ -9,7 +9,7 @@ pretraining adds.
 
 ---
 
-## Workflow at a glance
+## Workflow
 
 ```
 Kaggle
@@ -20,6 +20,7 @@ data/raw/food11/          16,643 images, with duplicates across splits
   ▼
 data/processed/food11/    9,856 train / 3,374 validation / 2,783 test
   │  uv run scripts/train.py                    3. train + evaluate on validation
+  │  uv run scripts/compare_runs.py                scratch vs pretrained curves + results table
   ▼
 checkpoints/<experiment>/best.pt                   + TensorBoard logs in runs/
   │                                                + validation reports in reports/
@@ -150,6 +151,17 @@ overwritten; to start over, change `experiment` in the config or delete its fold
 On an RTX 3050 one epoch takes ~22 s (the first one ~1.5 min while data workers start).
 Without a GPU the script refuses to start unless you pass `--allow-cpu` (training would take days).
 
+**Compare the two models.** Once both runs are trained:
+
+```bash
+uv run scripts/compare_runs.py
+```
+
+It writes `reports/comparison/val_curves.png` — validation accuracy, macro-F1 and loss per epoch
+for both models on one chart, best epochs marked — and `reports/comparison/results.md`, the rows
+for the [Results](#results) table (validation top-3 is taken from the validation report of the
+current `best.pt`). Use `--run <experiment>=<label>` (repeatable) to compare other runs.
+
 ### 4. Evaluate on the test split (once per final model)
 
 Validation results are produced by `scripts/train.py`. When a model is final, evaluate it once
@@ -237,8 +249,9 @@ container is unhealthy and `up --wait` fails.
 
 ## Results
 
-Validation split, best epoch by macro-F1. Filled in from the output of `scripts/train.py`
-(also in `checkpoints/<experiment>/summary.json` and `reports/<experiment>/validation/`).
+Validation split, best epoch by macro-F1. Copy the rows from `reports/comparison/results.md`
+(written by `uv run scripts/compare_runs.py`); the validation curves of both models are in
+`reports/comparison/val_curves.png` — copy it to `docs/` to keep it with the results.
 
 | Model | Hardware | Training time | Epochs (best) | Val accuracy | Val top-3 | Val macro-F1 |
 |-------|----------|---------------|---------------|--------------|-----------|--------------|
@@ -253,7 +266,8 @@ Test-split results are added once both models are final.
 
 ```
 configs/             experiment configs (YAML)
-scripts/             one-command steps: download_data, prepare_data, compute_stats, train
+scripts/             one-command steps: download_data, prepare_data, compute_stats, train,
+                     compare_runs
 src/
   data/              dataset, transforms, dataloaders, class balancing, constants
   models/            ResNet-18 factory (scratch / ImageNet-pretrained)
