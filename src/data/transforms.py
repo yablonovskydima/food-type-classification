@@ -11,11 +11,13 @@ def get_train_transforms(
     std: Sequence[float] = FOOD11_STD,
     randaugment: bool = True,
     random_erasing_p: float = 0.2,
+    randaugment_magnitude: int = 9,
+    crop_min_scale: float = 0.7,
 ) -> transforms.Compose:
     transform_list: list[object] = [
         transforms.RandomResizedCrop(
             size=image_size,
-            scale=(0.7, 1.0),
+            scale=(crop_min_scale, 1.0),
             interpolation=transforms.InterpolationMode.BILINEAR,
         ),
         transforms.RandomHorizontalFlip(p=0.5),
@@ -23,7 +25,7 @@ def get_train_transforms(
     ]
 
     if randaugment:
-        transform_list.append(transforms.RandAugment(num_ops=2, magnitude=9))
+        transform_list.append(transforms.RandAugment(num_ops=2, magnitude=randaugment_magnitude))
 
     transform_list.extend([
         transforms.ToTensor(),

@@ -17,6 +17,8 @@ How to run everything: **[USAGE.md](USAGE.md)**.
 - **Training** — PyTorch, own training loop: strong augmentation, class-weighted loss for the
   imbalanced classes, label smoothing, mixed precision, validation every epoch, best model by
   validation macro-F1. Settings live in `configs/*.yaml`.
+- **Tuning** — a sweep of short runs (learning rate, batch size, input size, augmentation
+  strength, MixUp/CutMix) compared on validation macro-F1; `configs/tuning/scratch.yaml`.
 - **Evaluation** — accuracy, top-3, macro-F1, per-class precision/recall/ROC-AUC, confusion
   matrix and Grad-CAM of the most confident mistakes. The test split is used once per final model.
 - **Serving** — command-line prediction, FastAPI service, Streamlit demo, Docker images, ONNX export.
@@ -35,7 +37,7 @@ The from-scratch row is filled in after its full 80-epoch run.
 ## Project structure
 
 ```
-configs/      experiment configs
+configs/      experiment configs and tuning sweeps
 scripts/      all commands (data, training, evaluation, prediction, export)
 src/          data, models, training, evaluation, inference
 app/          FastAPI service (api/) and Streamlit demo (ui/)

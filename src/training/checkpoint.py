@@ -1,4 +1,5 @@
 import os
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,9 @@ def load_training_state(path: str | Path, map_location: torch.device | str) -> d
 
 def check_resume_compatible(saved_config: dict[str, Any], config: TrainConfig) -> None:
     current = config.to_dict()
+    # Settings added after a run started count as their defaults.
+    defaults = {field.name: field.default for field in fields(TrainConfig)}
+    saved_config = {**defaults, **saved_config}
     changed = sorted(
         key
         for key in current.keys() | saved_config.keys()

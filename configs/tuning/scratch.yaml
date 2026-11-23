@@ -1,0 +1,29 @@
+name: scratch
+base_config: configs/resnet18_scratch.yaml
+
+overrides:
+  epochs: 30
+
+trials:
+  baseline: {}
+  lr_0.05:
+    lr: 0.05
+  lr_0.2:
+    lr: 0.2
+  batch_128:
+    batch_size: 128
+    lr: 0.2
+  size_128:
+    image_size: 128
+  aug_light:
+    randaugment_magnitude: 5
+    crop_min_scale: 0.85
+    random_erasing_p: 0.1
+  aug_strong:
+    randaugment_magnitude: 15
+    crop_min_scale: 0.4
+    random_erasing_p: 0.4
+  mixup:
+    mixup_alpha: 0.2
+  cutmix:
+    cutmix_alpha: 1.0

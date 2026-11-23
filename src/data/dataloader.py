@@ -27,6 +27,8 @@ def create_dataloaders(
     use_imagenet_stats: bool = False,
     randaugment: bool = True,
     random_erasing_p: float = 0.2,
+    randaugment_magnitude: int = 9,
+    crop_min_scale: float = 0.7,
     drop_last_train: bool = True,
     imbalance: str = DEFAULT_IMBALANCE_STRATEGY,
     seed: int | None = None,
@@ -41,6 +43,8 @@ def create_dataloaders(
         std=std,
         randaugment=randaugment,
         random_erasing_p=random_erasing_p,
+        randaugment_magnitude=randaugment_magnitude,
+        crop_min_scale=crop_min_scale,
     )
     eval_transform = get_eval_transforms(
         image_size=image_size,

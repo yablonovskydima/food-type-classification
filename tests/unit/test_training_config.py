@@ -123,3 +123,27 @@ def test_resume_compatibility() -> None:
     check_resume_compatible(saved, TrainConfig(experiment="t", num_workers=0))
     with pytest.raises(ValueError, match="lr"):
         check_resume_compatible(saved, TrainConfig(experiment="t", lr=0.5))
+
+
+def test_resume_accepts_runs_saved_before_new_settings_existed() -> None:
+    saved = TrainConfig(experiment="t").to_dict()
+    for key in ("randaugment_magnitude", "crop_min_scale", "mixup_alpha", "cutmix_alpha"):
+        del saved[key]
+    check_resume_compatible(saved, TrainConfig(experiment="t"))
+    with pytest.raises(ValueError, match="mixup_alpha"):
+        check_resume_compatible(saved, TrainConfig(experiment="t", mixup_alpha=0.2))
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"randaugment_magnitude": 31},
+        {"crop_min_scale": 0},
+        {"crop_min_scale": 1.5},
+        {"mixup_alpha": -0.1},
+        {"cutmix_alpha": -1},
+    ],
+)
+def test_invalid_augmentation_values(values: dict) -> None:
+    with pytest.raises(ValueError):
+        TrainConfig(experiment="t", **values)

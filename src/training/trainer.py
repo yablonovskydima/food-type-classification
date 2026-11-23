@@ -3,6 +3,8 @@ import math
 import platform
 import random
 import time
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -13,6 +15,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torchvision.transforms import v2
 from tqdm import tqdm
 
 from src.data.constants import NUM_CLASSES
@@ -38,10 +41,45 @@ def seed_everything(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
+def check_processed_data(data_dir: str | Path) -> None:
+    missing = [
+        split for split in ("training", "validation") if not (Path(data_dir) / split).is_dir()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"Processed dataset not found in {data_dir} (missing: {', '.join(missing)}). "
+            "Run `uv run scripts/download_data.py` and `uv run scripts/prepare_data.py` first."
+        )
+
+
+def select_device(allow_cpu: bool) -> str:
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        return "cuda"
+    if not allow_cpu:
+        raise RuntimeError(
+            "No CUDA GPU visible to PyTorch. Check the NVIDIA driver and that the CUDA build "
+            "is installed (`uv sync`), or pass --allow-cpu to train on the CPU anyway."
+        )
+    print("Warning: training on the CPU, this will take a very long time.")
+    return "cpu"
+
+
 def resolve_device(device: str | None) -> torch.device:
     if device is None:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device)
+
+
+def build_batch_mix(config: TrainConfig) -> Callable | None:
+    mixes = []
+    if config.mixup_alpha > 0:
+        mixes.append(v2.MixUp(alpha=config.mixup_alpha, num_classes=NUM_CLASSES))
+    if config.cutmix_alpha > 0:
+        mixes.append(v2.CutMix(alpha=config.cutmix_alpha, num_classes=NUM_CLASSES))
+    if not mixes:
+        return None
+    return mixes[0] if len(mixes) == 1 else v2.RandomChoice(mixes)
 
 
 def _limited(loader: DataLoader, limit_batches: int | None):
@@ -85,6 +123,7 @@ def train_one_epoch(
     writer: SummaryWriter | None = None,
     global_step: int = 0,
     epoch: int = 0,
+    batch_mix: Callable | None = None,
 ) -> tuple[dict[str, float], int]:
     model.train()
     loss_sum, labels, preds = 0.0, [], []
@@ -92,10 +131,13 @@ def train_one_epoch(
     for images, targets in progress:
         images = images.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        loss_targets = targets
+        if batch_mix is not None:
+            images, loss_targets = batch_mix(images, targets)
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp):
             logits = model(images)
-            loss = criterion(logits, targets)
+            loss = criterion(logits, loss_targets)
         if not torch.isfinite(loss):
             raise FloatingPointError(f"Training loss became {loss.item()} at step {global_step}")
         scaler.scale(loss).backward()
@@ -176,6 +218,8 @@ def fit(
         use_imagenet_stats=config.use_imagenet_stats,
         randaugment=config.randaugment,
         random_erasing_p=config.random_erasing_p,
+        randaugment_magnitude=config.randaugment_magnitude,
+        crop_min_scale=config.crop_min_scale,
         imbalance=config.imbalance,
         seed=config.seed,
     )
@@ -193,6 +237,7 @@ def fit(
     optimizer = build_optimizer(model, config)
     scheduler = build_scheduler(optimizer, config, steps_per_epoch)
     scaler = torch.amp.GradScaler(torch_device.type, enabled=amp and amp_dtype == torch.float16)
+    batch_mix = build_batch_mix(config)
 
     start_epoch, best_score, epochs_without_improvement = 1, -math.inf, 0
     best_epoch, history = 0, []
@@ -233,6 +278,7 @@ def fit(
                 amp_dtype=amp_dtype,
                 grad_clip_norm=config.grad_clip_norm,
                 limit_batches=limit_batches,
+                batch_mix=batch_mix,
                 writer=writer,
                 global_step=global_step,
                 epoch=epoch,

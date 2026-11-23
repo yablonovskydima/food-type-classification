@@ -75,7 +75,11 @@ def load_run(
     )
 
 
-def plot_validation_curves(runs: list[Run], path: Path) -> None:
+def plot_validation_curves(
+    runs: list[Run],
+    path: Path,
+    title: str = "ResNet-18 on Food-11: training from scratch vs ImageNet pretraining",
+) -> None:
     fig, axes = plt.subplots(1, len(CURVES), figsize=(6 * len(CURVES), 4.5), layout="constrained")
     for ax, (key, title) in zip(axes, CURVES, strict=True):
         for run in runs:
@@ -94,7 +98,7 @@ def plot_validation_curves(runs: list[Run], path: Path) -> None:
         if key != "val_loss":
             ax.set_ylim(0, 1)
     axes[0].legend(loc="lower right")
-    fig.suptitle("ResNet-18 on Food-11: training from scratch vs ImageNet pretraining (★ best)")
+    fig.suptitle(f"{title} (★ best)")
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=160)
     plt.close(fig)
