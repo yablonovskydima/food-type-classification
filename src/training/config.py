@@ -22,7 +22,11 @@ class TrainConfig:
     num_workers: int = 4
     imbalance: str = DEFAULT_IMBALANCE_STRATEGY
     randaugment: bool = True
+    randaugment_magnitude: int = 9
+    crop_min_scale: float = 0.7
     random_erasing_p: float = 0.2
+    mixup_alpha: float = 0.0
+    cutmix_alpha: float = 0.0
 
     epochs: int = 80
     optimizer: str = "sgd"
@@ -60,6 +64,12 @@ class TrainConfig:
             raise ValueError("warmup_epochs must be smaller than epochs")
         if not 0 <= self.label_smoothing < 1 or not 0 <= self.random_erasing_p <= 1:
             raise ValueError("label_smoothing must be in [0, 1) and random_erasing_p in [0, 1]")
+        if not 0 <= self.randaugment_magnitude <= 30 or not 0 < self.crop_min_scale <= 1:
+            raise ValueError(
+                "randaugment_magnitude must be in [0, 30] and crop_min_scale in (0, 1]"
+            )
+        if self.mixup_alpha < 0 or self.cutmix_alpha < 0:
+            raise ValueError("mixup_alpha and cutmix_alpha must be >= 0")
 
     def should_stop_early(self, epochs_without_improvement: int) -> bool:
         return (

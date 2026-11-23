@@ -125,3 +125,13 @@ def test_create_dataloaders(mock_dataset_dir: Path) -> None:
         assert batch_targets.shape == (batch_size,)
         assert batch_images.dtype == torch.float32
         assert batch_targets.dtype == torch.int64
+
+
+def test_train_transforms_strength_options(mock_image: Image.Image) -> None:
+    transform = get_train_transforms(
+        image_size=64, randaugment_magnitude=20, crop_min_scale=0.3, random_erasing_p=0.5
+    )
+    crop = transform.transforms[0]
+    assert crop.scale == (0.3, 1.0)
+    assert any(getattr(step, "magnitude", None) == 20 for step in transform.transforms)
+    assert transform(mock_image).shape == (3, 64, 64)

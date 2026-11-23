@@ -9,15 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import torch  # noqa: E402
-
 from src.evaluation.pipeline import evaluate_checkpoint  # noqa: E402
 from src.training.checkpoint import BEST_CHECKPOINT, LAST_CHECKPOINT  # noqa: E402
 from src.training.config import TrainConfig, load_config  # noqa: E402
-from src.training.trainer import fit  # noqa: E402
+from src.training.trainer import check_processed_data, fit, select_device  # noqa: E402
 
 DEFAULT_CONFIG = Path("configs") / "resnet18_scratch.yaml"
-SPLITS = ("training", "validation")
 
 
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
@@ -36,29 +33,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def check_data(config: TrainConfig) -> None:
-    data_dir = Path(config.data_dir)
-    missing = [split for split in SPLITS if not (data_dir / split).is_dir()]
-    if missing:
-        raise FileNotFoundError(
-            f"Processed dataset not found in {data_dir} (missing: {', '.join(missing)}). "
-            "Run `uv run scripts/download_data.py` and `uv run scripts/prepare_data.py` first."
-        )
-
-
-def choose_device(allow_cpu: bool) -> str:
-    if torch.cuda.is_available():
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-        return "cuda"
-    if not allow_cpu:
-        raise RuntimeError(
-            "No CUDA GPU visible to PyTorch. Check the NVIDIA driver and that the CUDA build "
-            "is installed (`uv sync`), or pass --allow-cpu to train on the CPU anyway."
-        )
-    print("Warning: training on the CPU, this will take a very long time.")
-    return "cpu"
-
-
 def report_dir(config: TrainConfig) -> Path:
     base = Path("reports") / config.experiment
     target = base / "validation"
@@ -72,8 +46,8 @@ def run(options: argparse.Namespace) -> None:
         options.config,
         overrides={"num_workers": options.num_workers, "epochs": options.epochs},
     )
-    check_data(config)
-    device = choose_device(options.allow_cpu)
+    check_processed_data(config.data_dir)
+    device = select_device(options.allow_cpu)
 
     run_dir = config.run_checkpoint_dir
     resume = None
@@ -133,10 +107,10 @@ def run(options: argparse.Namespace) -> None:
 
 def main(args: list[str] | None = None) -> int:
     options = parse_args(args)
-    if options.config.exists():  # A config given relative to the current folder.
+    if options.config.exists():
         options.config = options.config.resolve()
     previous_cwd = Path.cwd()
-    os.chdir(ROOT)  # Paths in configs are relative to the repository root.
+    os.chdir(ROOT)
     try:
         run(options)
     except (OSError, ValueError, RuntimeError) as error:

@@ -62,6 +62,20 @@ uv run scripts/compare_runs.py
 To retrain an experiment from scratch, delete `checkpoints/<experiment>`, `runs/<experiment>`
 and `reports/<experiment>` first.
 
+## Hyper-parameter tuning
+
+Runs every trial of `configs/tuning/scratch.yaml` (30 epochs each, ~1.5 h on an RTX 3050):
+
+```bash
+uv run scripts/tune.py
+uv run scripts/tune.py --only lr_0.2 mixup
+```
+
+Finished trials are skipped and interrupted ones resume when the command is run again.
+Results go to `reports/tuning/scratch/` (`results.md`, `val_curves.png`, `best_config.yaml`).
+To make the winner the new default, copy the changed values from `best_config.yaml` into
+`configs/resnet18_scratch.yaml` and retrain.
+
 ## Evaluation
 
 Validation split:

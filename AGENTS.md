@@ -40,6 +40,12 @@ university project that shows the full ML workflow end to end.
   GPUs that support it; persistent DataLoader workers. Scratch: SGD + OneCycle, 80 epochs, early
   stopping off (`early_stopping_patience: null`) so the low-LR phase is reached. Pretrained:
   AdamW + cosine, 25 epochs, patience 7.
+- **Tuning:** `scripts/tune.py` runs the trials of a sweep file (`configs/tuning/*.yaml`: base
+  config + shared overrides such as a shorter `epochs` + per-trial changes) through `fit()`,
+  into `checkpoints/tuning/` and `runs/tuning/`. Finished trials are reused, interrupted ones
+  resumed. Selection is by validation macro-F1 only; `best_config.yaml` keeps the base epochs.
+  Tunable augmentation: `randaugment_magnitude`, `crop_min_scale`, `random_erasing_p`,
+  `mixup_alpha`, `cutmix_alpha` (MixUp/CutMix mix batches in `train_one_epoch`).
 - **Imbalance:** the same `imbalance` value goes to `create_dataloaders` and `build_criterion`;
   default `weighted_loss`. Never combine loss weights and the sampler.
 - **Run outputs** (git-ignored): `checkpoints/<experiment>/` — `best.pt` (weights + metadata:
@@ -67,15 +73,17 @@ university project that shows the full ML workflow end to end.
 7. ✅ Inference CLI, FastAPI, Streamlit demo (#11, #13, #22), checked with trained checkpoints
 8. ✅ ONNX export (#12) — not used by the API/demo yet
 9. ✅ Docker images, Compose, smoke tests (#14)
+10. ✅ Hyper-parameter tuning tooling (#10) — `scripts/tune.py` + `configs/tuning/scratch.yaml`;
+    running the sweep (~1.5 h) is optional and has not been done
 
 Tasks are tracked as GitHub issues; reference the issue in the PR.
 
 ## Repository layout
 
 ```
-configs/        experiment configs (YAML)
+configs/        experiment configs (YAML); tuning/ holds sweep files
 scripts/        every user-facing command: download_data, prepare_data, compute_stats, train,
-                compare_runs, evaluate, predict, export_onnx
+                compare_runs, tune, evaluate, predict, export_onnx
 src/
   data/         dataset, transforms, dataloaders (training + validation only), class balance
   models/       ResNet-18 factory

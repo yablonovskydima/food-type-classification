@@ -146,3 +146,24 @@ def test_weighted_sampler_strategy_trains(config: TrainConfig) -> None:
     config.imbalance = "weighted_sampler"
     config.epochs = 1
     assert trainer.fit(config, device="cpu")["epochs_completed"] == 1
+
+
+def test_no_batch_mixing_by_default(config: TrainConfig) -> None:
+    assert trainer.build_batch_mix(config) is None
+
+
+@pytest.mark.parametrize("mixup_alpha, cutmix_alpha", [(0.2, 0.0), (0.0, 1.0), (0.2, 1.0)])
+def test_mixup_and_cutmix_train(
+    config: TrainConfig, mixup_alpha: float, cutmix_alpha: float
+) -> None:
+    config.mixup_alpha, config.cutmix_alpha, config.epochs = mixup_alpha, cutmix_alpha, 1
+    mix = trainer.build_batch_mix(config)
+    images, targets = torch.randn(4, 3, 32, 32), torch.tensor([0, 1, 2, 3])
+    mixed_images, soft_targets = mix(images, targets)
+    assert mixed_images.shape == images.shape
+    assert soft_targets.shape == (4, len(CLASSES))
+    assert torch.allclose(soft_targets.sum(dim=1), torch.ones(4))
+
+    summary = trainer.fit(config, device="cpu")
+    assert summary["epochs_completed"] == 1
+    assert 0 <= summary["best_val_macro_f1"] <= 1
